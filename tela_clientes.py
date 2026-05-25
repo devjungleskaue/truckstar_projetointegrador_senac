@@ -17,17 +17,35 @@ import config
 class TelaClientes(ctk.CTkToplevel):
     def __init__(self, master, usuario_logado):
         super().__init__(master)
+        self.master_painel = master
         self.usuario = usuario_logado
         self.title("Clientes - Truckstar")
-        self.geometry("1000x680")
+        self.geometry("1000x720")
         self.grab_set()
         self.id_atual = None
 
+        self._montar_topbar()
         self._montar_formulario()
         self._montar_botoes()
         self._montar_busca()
         self._montar_tabela()
         self.listar()
+
+    def _montar_topbar(self):
+        bar = ctk.CTkFrame(self, height=42, fg_color="#1a4d8f")
+        bar.pack(fill="x", padx=10, pady=(10, 0))
+        ctk.CTkLabel(bar, text="Logado: {} ({})".format(self.usuario['nome'], self.usuario['cargo']),
+                     font=("Arial", 11, "bold"), text_color="white").pack(side="left", padx=10, pady=6)
+        ctk.CTkButton(bar, text="Sair (Logout)", width=120, height=28,
+                      fg_color="darkred", hover_color="#8b0000",
+                      command=self._sair_logout).pack(side="right", padx=10, pady=6)
+
+    def _sair_logout(self):
+        self.destroy()
+        try:
+            self.master_painel.sair()
+        except Exception:
+            pass
 
     def _montar_formulario(self):
         frm = ctk.CTkFrame(self)
