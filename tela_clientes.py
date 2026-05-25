@@ -12,6 +12,7 @@ import validacoes as v
 import seguranca
 from email_sender import enviar_email, email_boas_vindas
 import config
+from ui_utils import habilitar_resize_e_fullscreen, botao_tela_cheia
 
 
 class TelaClientes(ctk.CTkToplevel):
@@ -22,6 +23,7 @@ class TelaClientes(ctk.CTkToplevel):
         self.title("Clientes - Truckstar")
         self.geometry("1000x720")
         self.grab_set()
+        habilitar_resize_e_fullscreen(self, min_w=820, min_h=620)
         self.id_atual = None
 
         self._montar_topbar()
@@ -39,6 +41,7 @@ class TelaClientes(ctk.CTkToplevel):
         ctk.CTkButton(bar, text="Sair (Logout)", width=120, height=28,
                       fg_color="darkred", hover_color="#8b0000",
                       command=self._sair_logout).pack(side="right", padx=10, pady=6)
+        botao_tela_cheia(bar, self).pack(side="right", padx=5, pady=6)
 
     def _sair_logout(self):
         self.destroy()
@@ -396,8 +399,9 @@ class TelaCaminhoes(ctk.CTkToplevel):
         self.cliente_id = cliente_id
         self.id_atual = None
         self.title("Caminhões de " + cliente_nome)
-        self.geometry("850x560")
+        self.geometry("850x580")
         self.grab_set()
+        habilitar_resize_e_fullscreen(self, min_w=720, min_h=480)
 
         frm = ctk.CTkFrame(self)
         frm.pack(fill="x", padx=10, pady=10)

@@ -18,6 +18,7 @@ from db import conectar
 from pdf_os import gerar_pdf_os
 import validacoes as v
 from email_sender import enviar_email, email_os_criada, email_os_atualizada
+from ui_utils import habilitar_resize_e_fullscreen, botao_tela_cheia
 
 
 class TelaOrdens(ctk.CTkToplevel):
@@ -29,6 +30,7 @@ class TelaOrdens(ctk.CTkToplevel):
         ctk.CTkButton(bar, text="Sair (Logout)", width=120, height=28,
                       fg_color="darkred", hover_color="#8b0000",
                       command=self._sair_logout).pack(side="right", padx=10, pady=6)
+        botao_tela_cheia(bar, self).pack(side="right", padx=5, pady=6)
 
     def _sair_logout(self):
         self.destroy()
@@ -44,6 +46,7 @@ class TelaOrdens(ctk.CTkToplevel):
         self.title("Ordens de Serviço - Truckstar")
         self.geometry("1150x770")
         self.grab_set()
+        habilitar_resize_e_fullscreen(self, min_w=920, min_h=620)
 
         self._topbar()
 
