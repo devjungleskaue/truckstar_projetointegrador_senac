@@ -1,0 +1,173 @@
+"""
+Envio de email via SMTP Gmail.
+- Roda em thread separada (não trava a UI).
+- Se EMAIL_USUARIO/SENHA não configurados, NÃO envia mas registra no log.
+- Toda tentativa é registrada em email_logs (sucesso ou falha).
+"""
+import smtplib
+import ssl
+import threading
+from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.utils import formataddr
+
+import config
+
+
+def _esta_configurado() -> bool:
+    return bool(config.EMAIL_USUARIO and config.EMAIL_SENHA)
+
+
+def _registrar_log(destinatario: str, assunto: str, sucesso: bool, erro: str = ''):
+    """Salva no banco. Importa db aqui pra evitar import circular."""
+    try:
+        from db import conectar
+        conn = conectar()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO email_logs (destinatario, assunto, sucesso, erro, enviado_em)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (destinatario or '', assunto or '', 1 if sucesso else 0,
+              (erro or '')[:500], datetime.now()))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        # log falhar não deve quebrar nada
+        print("[email_log] Falha ao registrar:", e)
+
+
+def _montar_html(corpo_html: str) -> str:
+    return """\
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="font-family: Arial, sans-serif; background:#f4f4f4; padding:20px;">
+  <div style="max-width:600px; margin:auto; background:white; border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+    <div style="background:#1a4d8f; color:white; padding:20px; text-align:center;">
+      <h1 style="margin:0;">TRUCKSTAR</h1>
+      <p style="margin:4px 0 0; font-size:13px; opacity:0.85;">Mecânica de Caminhões</p>
+    </div>
+    <div style="padding:25px; color:#333; line-height:1.6;">
+      {corpo}
+    </div>
+    <div style="background:#f0f0f0; padding:15px; text-align:center; font-size:11px; color:#777;">
+      Este é um email automático. Não responda.<br>
+      Truckstar Mecânica de Caminhões
+    </div>
+  </div>
+</body></html>""".format(corpo=corpo_html)
+
+
+def _enviar_sincrono(destinatario: str, assunto: str, corpo_html: str) -> tuple:
+    """Envia de fato. Retorna (sucesso: bool, erro: str)."""
+    if not destinatario:
+        return False, "Destinatário vazio"
+
+    if not _esta_configurado():
+        return False, "SMTP não configurado (config.py)"
+
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = assunto
+    msg['From'] = formataddr((config.EMAIL_REMETENTE_NOME, config.EMAIL_USUARIO))
+    msg['To'] = destinatario
+    msg.attach(MIMEText(_montar_html(corpo_html), 'html', 'utf-8'))
+
+    try:
+        contexto = ssl.create_default_context()
+        with smtplib.SMTP(config.EMAIL_HOST, config.EMAIL_PORTA, timeout=15) as servidor:
+            servidor.ehlo()
+            servidor.starttls(context=contexto)
+            servidor.ehlo()
+            servidor.login(config.EMAIL_USUARIO, config.EMAIL_SENHA)
+            servidor.sendmail(config.EMAIL_USUARIO, [destinatario], msg.as_string())
+        return True, ''
+    except smtplib.SMTPAuthenticationError as e:
+        return False, "Falha de autenticação SMTP (verifique senha de app): " + str(e)
+    except smtplib.SMTPException as e:
+        return False, "Erro SMTP: " + str(e)
+    except OSError as e:
+        return False, "Erro de rede: " + str(e)
+    except Exception as e:
+        return False, "Erro inesperado: " + str(e)
+
+
+def enviar_email(destinatario: str, assunto: str, corpo_html: str, em_thread: bool = True):
+    """
+    Envia email. Por padrão em thread separada (não bloqueia UI).
+    Sempre registra no log (mesmo se não configurado ou falhou).
+    """
+    def tarefa():
+        sucesso, erro = _enviar_sincrono(destinatario, assunto, corpo_html)
+        _registrar_log(destinatario, assunto, sucesso, erro)
+        if sucesso:
+            print("[email] Enviado para", destinatario)
+        else:
+            print("[email] Falha p/", destinatario, "-", erro)
+
+    if em_thread:
+        t = threading.Thread(target=tarefa, daemon=True)
+        t.start()
+    else:
+        tarefa()
+
+
+# ---------- TEMPLATES PRONTOS ----------
+def email_os_criada(cliente_nome: str, os_id: int, placa: str, problema: str,
+                    funcionario: str) -> tuple:
+    """Retorna (assunto, corpo_html)."""
+    assunto = "Truckstar - Ordem de Serviço Nº {:06d} criada".format(os_id)
+    corpo = """
+    <h2 style="color:#1a4d8f; margin-top:0;">Olá, {nome}!</h2>
+    <p>Sua ordem de serviço foi <b>registrada com sucesso</b> em nosso sistema.</p>
+    <table style="width:100%; border-collapse:collapse; margin:15px 0;">
+      <tr><td style="padding:8px; background:#f0f4f8; border:1px solid #ddd;"><b>Nº da OS:</b></td>
+          <td style="padding:8px; border:1px solid #ddd;">{os_id:06d}</td></tr>
+      <tr><td style="padding:8px; background:#f0f4f8; border:1px solid #ddd;"><b>Veículo (placa):</b></td>
+          <td style="padding:8px; border:1px solid #ddd;">{placa}</td></tr>
+      <tr><td style="padding:8px; background:#f0f4f8; border:1px solid #ddd;"><b>Mecânico Responsável:</b></td>
+          <td style="padding:8px; border:1px solid #ddd;">{func}</td></tr>
+      <tr><td style="padding:8px; background:#f0f4f8; border:1px solid #ddd;"><b>Status:</b></td>
+          <td style="padding:8px; border:1px solid #ddd;">Aberta</td></tr>
+    </table>
+    <p><b>Problema relatado:</b><br>{problema}</p>
+    <p>Você pode acompanhar o andamento da sua OS acessando o portal Truckstar com seu CPF.</p>
+    <p style="margin-top:20px;">Obrigado pela preferência!<br><b>Equipe Truckstar</b></p>
+    """.format(
+        nome=cliente_nome, os_id=os_id, placa=placa,
+        func=funcionario, problema=(problema or '---').replace('\n', '<br>')
+    )
+    return assunto, corpo
+
+
+def email_os_atualizada(cliente_nome: str, os_id: int, placa: str, status: str,
+                        valor_total: float) -> tuple:
+    assunto = "Truckstar - OS Nº {:06d} atualizada ({})".format(os_id, status)
+    corpo = """
+    <h2 style="color:#1a4d8f; margin-top:0;">Olá, {nome}!</h2>
+    <p>A ordem de serviço do seu veículo foi atualizada.</p>
+    <table style="width:100%; border-collapse:collapse; margin:15px 0;">
+      <tr><td style="padding:8px; background:#f0f4f8; border:1px solid #ddd;"><b>Nº da OS:</b></td>
+          <td style="padding:8px; border:1px solid #ddd;">{os_id:06d}</td></tr>
+      <tr><td style="padding:8px; background:#f0f4f8; border:1px solid #ddd;"><b>Placa:</b></td>
+          <td style="padding:8px; border:1px solid #ddd;">{placa}</td></tr>
+      <tr><td style="padding:8px; background:#f0f4f8; border:1px solid #ddd;"><b>Novo status:</b></td>
+          <td style="padding:8px; border:1px solid #ddd;"><b style="color:#1a4d8f;">{status}</b></td></tr>
+      <tr><td style="padding:8px; background:#f0f4f8; border:1px solid #ddd;"><b>Valor total:</b></td>
+          <td style="padding:8px; border:1px solid #ddd;">R$ {valor:.2f}</td></tr>
+    </table>
+    <p style="margin-top:20px;"><b>Equipe Truckstar</b></p>
+    """.format(nome=cliente_nome, os_id=os_id, placa=placa, status=status, valor=valor_total)
+    return assunto, corpo
+
+
+def email_boas_vindas(cliente_nome: str) -> tuple:
+    assunto = "Bem-vindo(a) à Truckstar!"
+    corpo = """
+    <h2 style="color:#1a4d8f; margin-top:0;">Bem-vindo(a), {nome}!</h2>
+    <p>Seu cadastro foi realizado com sucesso no portal Truckstar.</p>
+    <p>Agora você pode acompanhar as ordens de serviço dos seus veículos
+    a qualquer momento, basta fazer login com seu <b>CPF e senha</b>.</p>
+    <p style="margin-top:20px;">Obrigado por escolher a Truckstar!<br><b>Equipe Truckstar</b></p>
+    """.format(nome=cliente_nome)
+    return assunto, corpo
