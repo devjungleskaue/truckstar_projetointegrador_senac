@@ -21,12 +21,31 @@ from email_sender import enviar_email, email_os_criada, email_os_atualizada
 
 
 class TelaOrdens(ctk.CTkToplevel):
+    def _topbar(self):
+        bar = ctk.CTkFrame(self, height=42, fg_color="#1a4d8f")
+        bar.pack(fill="x", padx=10, pady=(10, 0))
+        ctk.CTkLabel(bar, text="Logado: {} ({})".format(self.usuario['nome'], self.usuario['cargo']),
+                     font=("Arial", 11, "bold"), text_color="white").pack(side="left", padx=10, pady=6)
+        ctk.CTkButton(bar, text="Sair (Logout)", width=120, height=28,
+                      fg_color="darkred", hover_color="#8b0000",
+                      command=self._sair_logout).pack(side="right", padx=10, pady=6)
+
+    def _sair_logout(self):
+        self.destroy()
+        try:
+            self.master_painel.sair()
+        except Exception:
+            pass
+
     def __init__(self, master, usuario_logado):
         super().__init__(master)
+        self.master_painel = master
         self.usuario = usuario_logado  # dict id, nome, cargo
         self.title("Ordens de Serviço - Truckstar")
-        self.geometry("1150x720")
+        self.geometry("1150x770")
         self.grab_set()
+
+        self._topbar()
 
         self.tabs = ctk.CTkTabview(self)
         self.tabs.pack(fill="both", expand=True, padx=10, pady=10)
