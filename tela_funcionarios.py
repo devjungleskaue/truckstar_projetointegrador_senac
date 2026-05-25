@@ -10,6 +10,7 @@ from db import conectar
 import validacoes as v
 import seguranca
 import config
+from ui_utils import habilitar_resize_e_fullscreen, botao_tela_cheia
 
 
 class TelaFuncionarios(ctk.CTkToplevel):
@@ -20,6 +21,7 @@ class TelaFuncionarios(ctk.CTkToplevel):
         self.title("Funcionários - Truckstar")
         self.geometry("980x700")
         self.grab_set()
+        habilitar_resize_e_fullscreen(self, min_w=820, min_h=600)
         self.id_atual = None
 
         self._topbar()
@@ -37,6 +39,7 @@ class TelaFuncionarios(ctk.CTkToplevel):
         ctk.CTkButton(bar, text="Sair (Logout)", width=120, height=28,
                       fg_color="darkred", hover_color="#8b0000",
                       command=self._sair_logout).pack(side="right", padx=10, pady=6)
+        botao_tela_cheia(bar, self).pack(side="right", padx=5, pady=6)
 
     def _sair_logout(self):
         self.destroy()

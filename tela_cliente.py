@@ -12,6 +12,7 @@ from tkinter import messagebox, ttk, filedialog
 from db import conectar
 from pdf_os import gerar_pdf_os
 import validacoes as v
+from ui_utils import habilitar_resize_e_fullscreen, botao_tela_cheia
 
 
 class PainelCliente(ctk.CTkToplevel):
@@ -20,8 +21,9 @@ class PainelCliente(ctk.CTkToplevel):
         self.cliente = cliente  # dict id, nome, cpf, email
         self.master_win = master
         self.title("Truckstar - Portal do Cliente")
-        self.geometry("1000x680")
+        self.geometry("1000x700")
         self.protocol("WM_DELETE_WINDOW", self.sair)
+        habilitar_resize_e_fullscreen(self, min_w=720, min_h=520)
 
         # cabeçalho
         topo = ctk.CTkFrame(self, height=70)
@@ -32,6 +34,7 @@ class PainelCliente(ctk.CTkToplevel):
                      font=("Arial", 13)).pack(side="left", padx=20)
         ctk.CTkButton(topo, text="Sair", command=self.sair,
                       fg_color="darkred", width=80).pack(side="right", padx=15)
+        botao_tela_cheia(topo, self).pack(side="right", padx=5)
 
         tabs = ctk.CTkTabview(self)
         tabs.pack(fill="both", expand=True, padx=10, pady=10)

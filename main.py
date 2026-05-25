@@ -15,6 +15,7 @@ from db import conectar, inicializar
 import seguranca
 import validacoes as v
 from email_sender import enviar_email, email_boas_vindas
+from ui_utils import habilitar_resize_e_fullscreen, botao_tela_cheia
 
 
 ctk.set_appearance_mode("dark")
@@ -56,8 +57,8 @@ class TelaLogin(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title(config.EMPRESA_NOME + " - Login")
-        self.geometry("440x600")
-        self.resizable(False, False)
+        self.geometry("440x620")
+        habilitar_resize_e_fullscreen(self, min_w=380, min_h=560)
 
         ctk.CTkLabel(self, text="TRUCKSTAR", font=("Arial", 30, "bold"),
                      text_color="#4a9eff").pack(pady=(20, 0))
@@ -224,8 +225,9 @@ class TelaCadastroCliente(ctk.CTkToplevel):
     def __init__(self, master):
         super().__init__(master)
         self.title("Criar conta - Cliente")
-        self.geometry("520x680")
+        self.geometry("520x720")
         self.grab_set()
+        habilitar_resize_e_fullscreen(self, min_w=440, min_h=620)
 
         ctk.CTkLabel(self, text="Cadastro de Cliente",
                      font=("Arial", 18, "bold")).pack(pady=15)
@@ -365,15 +367,17 @@ class TelaPrincipal(ctk.CTkToplevel):
         self.login_window = login_window
         self.usuario = usuario
         self.title("Truckstar - Painel ({})".format(usuario['cargo']))
-        self.geometry("640x540")
+        self.geometry("680x560")
         self.protocol("WM_DELETE_WINDOW", self.sair)
+        habilitar_resize_e_fullscreen(self, min_w=560, min_h=500)
 
         topo = ctk.CTkFrame(self, height=80)
         topo.pack(fill="x", padx=10, pady=10)
         ctk.CTkLabel(topo, text="TRUCKSTAR", font=("Arial", 22, "bold"),
                      text_color="#4a9eff").pack(side="left", padx=15)
+        botao_tela_cheia(topo, self).pack(side="right", padx=5)
         ctk.CTkLabel(topo, text="Logado: {} ({})".format(usuario['nome'], usuario['cargo']),
-                     font=("Arial", 12)).pack(side="right", padx=15)
+                     font=("Arial", 12)).pack(side="right", padx=10)
 
         frm = ctk.CTkFrame(self)
         frm.pack(fill="both", expand=True, padx=10, pady=10)
