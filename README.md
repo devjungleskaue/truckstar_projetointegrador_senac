@@ -85,11 +85,20 @@ sistema. Cliente faz login com **CPF + senha** na aba "Cliente" — há botão
 1. Crie uma conta gratuita em https://resend.com (100 emails/dia, 3 mil/mês)
 2. Gere uma API key em https://resend.com/api-keys
 3. Cole o valor em `RESEND_API_KEY` no seu `config.py`
-4. (Opcional) Para enviar de um domínio próprio em vez de `onboarding@resend.dev`,
+4. Configure `EMAIL_REPLY_TO` com o Gmail/Outlook da oficina — quando o cliente
+   responder o email, a resposta cai nessa caixa
+5. (Opcional) Para enviar de um domínio próprio em vez de `onboarding@resend.dev`,
    verifique o domínio em https://resend.com/domains e altere `EMAIL_FROM`
 
 Se `RESEND_API_KEY` ficar vazia, o app continua funcionando normalmente, apenas
 não envia emails (cada tentativa é registrada na tabela `email_logs` com erro).
+
+> ℹ️ No free tier do Resend, o `EMAIL_FROM` precisa ser `onboarding@resend.dev`
+> ou um endereço em domínio próprio verificado — não dá pra usar
+> `@gmail.com`/`@outlook.com` como remetente porque você não possui esses
+> domínios. O fluxo correto é usar o sender pré-aprovado **e** o `EMAIL_REPLY_TO`
+> apontando pro seu Gmail real (assim cliente vê "Truckstar Mecânica" como
+> remetente e respostas vão pro seu Gmail).
 
 ## Notas de segurança
 

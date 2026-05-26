@@ -18,6 +18,9 @@ DB_NAME = 'truckstar'
 RESEND_API_KEY = ''                       # ex: 're_xxxxxxxxxxxxxxxxxxxx'
 EMAIL_FROM = 'onboarding@resend.dev'      # sender pré-aprovado (sem precisar de domínio próprio)
 EMAIL_REMETENTE_NOME = 'Truckstar Mecânica'
+# Quando o cliente responder ao email, a resposta vai para este endereço.
+# Use o Gmail/Outlook da oficina que receberá as respostas.
+EMAIL_REPLY_TO = ''                       # ex: 'oficina@gmail.com'
 
 # ===== SEGURANÇA =====
 # 600k iterações: OWASP 2023 recommendation para PBKDF2-HMAC-SHA256.

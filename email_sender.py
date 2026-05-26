@@ -72,13 +72,18 @@ def _enviar_sincrono(destinatario: str, assunto: str, corpo_html: str) -> tuple:
     resend.api_key = config.RESEND_API_KEY
     remetente = "{} <{}>".format(config.EMAIL_REMETENTE_NOME, config.EMAIL_FROM)
 
+    payload = {
+        "from": remetente,
+        "to": [destinatario],
+        "subject": assunto,
+        "html": _montar_html(corpo_html),
+    }
+    reply_to = getattr(config, 'EMAIL_REPLY_TO', '') or ''
+    if reply_to:
+        payload["reply_to"] = [reply_to]
+
     try:
-        resend.Emails.send({
-            "from": remetente,
-            "to": [destinatario],
-            "subject": assunto,
-            "html": _montar_html(corpo_html),
-        })
+        resend.Emails.send(payload)
         return True, ''
     except Exception as e:
         return False, "Erro Resend: " + str(e)
