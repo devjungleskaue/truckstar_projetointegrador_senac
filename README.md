@@ -10,7 +10,7 @@ ao cliente, geração de PDF profissional da OS e validação oficial de CPF/CNP
 - **CustomTkinter** — interface gráfica
 - **PyMySQL** — conexão MySQL
 - **ReportLab** — geração de PDF
-- **smtplib + ssl** (stdlib) — envio SMTP Gmail
+- **Resend** — envio de email transacional via API
 
 ## Setup
 
@@ -80,11 +80,29 @@ sistema. Cliente faz login com **CPF + senha** na aba "Cliente" — há botão
 └── tela_cliente.py      # portal read-only do cliente
 ```
 
+## Configuração de email (Resend)
+
+1. Crie uma conta gratuita em https://resend.com (100 emails/dia, 3 mil/mês)
+2. Gere uma API key em https://resend.com/api-keys
+3. Cole o valor em `RESEND_API_KEY` no seu `config.py`
+4. Configure `EMAIL_REPLY_TO` com o Gmail/Outlook da oficina — quando o cliente
+   responder o email, a resposta cai nessa caixa
+5. (Opcional) Para enviar de um domínio próprio em vez de `onboarding@resend.dev`,
+   verifique o domínio em https://resend.com/domains e altere `EMAIL_FROM`
+
+Se `RESEND_API_KEY` ficar vazia, o app continua funcionando normalmente, apenas
+não envia emails (cada tentativa é registrada na tabela `email_logs` com erro).
+
+> ℹ️ No free tier do Resend, o `EMAIL_FROM` precisa ser `onboarding@resend.dev`
+> ou um endereço em domínio próprio verificado — não dá pra usar
+> `@gmail.com`/`@outlook.com` como remetente porque você não possui esses
+> domínios. O fluxo correto é usar o sender pré-aprovado **e** o `EMAIL_REPLY_TO`
+> apontando pro seu Gmail real (assim cliente vê "Truckstar Mecânica" como
+> remetente e respostas vão pro seu Gmail).
+
 ## Notas de segurança
 
-- `config.py` está no `.gitignore` — nunca versione credenciais
-- Para o email Gmail funcionar, use uma **senha de app**:
-  https://myaccount.google.com/apppasswords
+- `config.py` está no `.gitignore` — nunca versione credenciais (API key inclusive)
 - Senhas no banco são armazenadas como hash PBKDF2-SHA256 (600k iterações, conforme OWASP 2023) + salt aleatório de 16 bytes
 - Comparação de senhas é resistente a timing attacks (`hmac.compare_digest`)
 - Rate limiting em memória: 5 tentativas / 60s por usuário ou CPF

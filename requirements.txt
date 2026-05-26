@@ -1,3 +1,4 @@
 pymysql
 customtkinter
 reportlab
+resend
