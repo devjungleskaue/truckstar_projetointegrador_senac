@@ -73,10 +73,6 @@ class TelaLogin(ctk.CTk):
         self._tab_funcionario(self.tabs.tab("Funcionário"))
         self._tab_cliente(self.tabs.tab("Cliente"))
 
-        self.lbl_info = ctk.CTkLabel(self, text="admin / admin123 (login inicial)",
-                                     text_color="gray", font=("Arial", 9))
-        self.lbl_info.pack()
-
     # ---- TAB FUNCIONÁRIO ----
     def _tab_funcionario(self, tab):
         ctk.CTkLabel(tab, text="Acesso de Funcionário",
