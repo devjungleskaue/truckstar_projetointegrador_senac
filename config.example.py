@@ -10,17 +10,17 @@ DB_USER = 'root'
 DB_PASSWORD = 'SUA_SENHA_DO_MYSQL'
 DB_NAME = 'truckstar'
 
-# ===== EMAIL (GMAIL SMTP) =====
-# Para usar Gmail:
-# 1) Ative verificação em 2 etapas: https://myaccount.google.com/security
-# 2) Gere uma senha de app: https://myaccount.google.com/apppasswords
-# 3) Cole a senha de 16 caracteres (sem espaços) em EMAIL_SENHA
-# Se EMAIL_USUARIO ficar vazio, o sistema NÃO envia email mas salva no log.
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORTA = 587
-EMAIL_USUARIO = ''   # ex: 'truckstar.oficina@gmail.com'
-EMAIL_SENHA = ''     # senha de app de 16 caracteres
+# ===== EMAIL (RESEND) =====
+# 1) Crie conta gratuita em https://resend.com (100 emails/dia, 3k/mês)
+# 2) Gere API key em https://resend.com/api-keys
+# 3) Cole abaixo (formato: re_xxxxxxxxxxxxxxxxxxxx)
+# Se RESEND_API_KEY ficar vazia, o sistema NÃO envia email mas salva no log.
+RESEND_API_KEY = ''                       # ex: 're_xxxxxxxxxxxxxxxxxxxx'
+EMAIL_FROM = 'onboarding@resend.dev'      # sender pré-aprovado (sem precisar de domínio próprio)
 EMAIL_REMETENTE_NOME = 'Truckstar Mecânica'
+# Quando o cliente responder ao email, a resposta vai para este endereço.
+# Use o Gmail/Outlook da oficina que receberá as respostas.
+EMAIL_REPLY_TO = ''                       # ex: 'oficina@gmail.com'
 
 # ===== SEGURANÇA =====
 # 600k iterações: OWASP 2023 recommendation para PBKDF2-HMAC-SHA256.

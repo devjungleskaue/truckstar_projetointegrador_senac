@@ -1,17 +1,15 @@
 """
-Envio de email via SMTP Gmail.
+Envio de email via Resend (https://resend.com).
 - Roda em thread separada (não trava a UI).
-- Se EMAIL_USUARIO/SENHA não configurados, NÃO envia mas registra no log.
+- Se RESEND_API_KEY não configurada, NÃO envia mas registra no log.
 - Toda tentativa é registrada em email_logs (sucesso ou falha).
+- Compatível com a API pública anterior (enviar_email + templates).
 """
 import html
-import smtplib
-import ssl
 import threading
 from datetime import datetime
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.utils import formataddr
+
+import resend
 
 import config
 
@@ -22,7 +20,7 @@ def _esc(s) -> str:
 
 
 def _esta_configurado() -> bool:
-    return bool(config.EMAIL_USUARIO and config.EMAIL_SENHA)
+    return bool(getattr(config, 'RESEND_API_KEY', '') and getattr(config, 'EMAIL_FROM', ''))
 
 
 def _registrar_log(destinatario: str, assunto: str, sucesso: bool, erro: str = ''):
@@ -40,7 +38,6 @@ def _registrar_log(destinatario: str, assunto: str, sucesso: bool, erro: str = '
         cur.close()
         conn.close()
     except Exception as e:
-        # log falhar não deve quebrar nada
         print("[email_log] Falha ao registrar:", e)
 
 
@@ -66,41 +63,35 @@ def _montar_html(corpo_html: str) -> str:
 
 
 def _enviar_sincrono(destinatario: str, assunto: str, corpo_html: str) -> tuple:
-    """Envia de fato. Retorna (sucesso: bool, erro: str)."""
+    """Envia via Resend. Retorna (sucesso: bool, erro: str)."""
     if not destinatario:
         return False, "Destinatário vazio"
-
     if not _esta_configurado():
-        return False, "SMTP não configurado (config.py)"
+        return False, "Resend não configurado (RESEND_API_KEY/EMAIL_FROM em config.py)"
 
-    msg = MIMEMultipart('alternative')
-    msg['Subject'] = assunto
-    msg['From'] = formataddr((config.EMAIL_REMETENTE_NOME, config.EMAIL_USUARIO))
-    msg['To'] = destinatario
-    msg.attach(MIMEText(_montar_html(corpo_html), 'html', 'utf-8'))
+    resend.api_key = config.RESEND_API_KEY
+    remetente = "{} <{}>".format(config.EMAIL_REMETENTE_NOME, config.EMAIL_FROM)
+
+    payload = {
+        "from": remetente,
+        "to": [destinatario],
+        "subject": assunto,
+        "html": _montar_html(corpo_html),
+    }
+    reply_to = getattr(config, 'EMAIL_REPLY_TO', '') or ''
+    if reply_to:
+        payload["reply_to"] = [reply_to]
 
     try:
-        contexto = ssl.create_default_context()
-        with smtplib.SMTP(config.EMAIL_HOST, config.EMAIL_PORTA, timeout=15) as servidor:
-            servidor.ehlo()
-            servidor.starttls(context=contexto)
-            servidor.ehlo()
-            servidor.login(config.EMAIL_USUARIO, config.EMAIL_SENHA)
-            servidor.sendmail(config.EMAIL_USUARIO, [destinatario], msg.as_string())
+        resend.Emails.send(payload)
         return True, ''
-    except smtplib.SMTPAuthenticationError as e:
-        return False, "Falha de autenticação SMTP (verifique senha de app): " + str(e)
-    except smtplib.SMTPException as e:
-        return False, "Erro SMTP: " + str(e)
-    except OSError as e:
-        return False, "Erro de rede: " + str(e)
     except Exception as e:
-        return False, "Erro inesperado: " + str(e)
+        return False, "Erro Resend: " + str(e)
 
 
 def enviar_email(destinatario: str, assunto: str, corpo_html: str, em_thread: bool = True):
     """
-    Envia email. Por padrão em thread separada (não bloqueia UI).
+    Envia email via Resend. Por padrão em thread separada (não bloqueia UI).
     Sempre registra no log (mesmo se não configurado ou falhou).
     """
     def tarefa():
@@ -112,8 +103,7 @@ def enviar_email(destinatario: str, assunto: str, corpo_html: str, em_thread: bo
             print("[email] Falha p/", destinatario, "-", erro)
 
     if em_thread:
-        t = threading.Thread(target=tarefa, daemon=True)
-        t.start()
+        threading.Thread(target=tarefa, daemon=True).start()
     else:
         tarefa()
 
