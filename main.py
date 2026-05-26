@@ -424,8 +424,8 @@ class TelaPrincipal(ctk.CTkToplevel):
 def main():
     print("Inicializando banco de dados...")
     inicializar()
-    if not config.EMAIL_USUARIO:
-        print("[AVISO] Email Gmail não configurado em config.py - emails NÃO serão enviados.")
+    if not getattr(config, 'RESEND_API_KEY', ''):
+        print("[AVISO] RESEND_API_KEY não configurada em config.py - emails NÃO serão enviados.")
     app = TelaLogin()
     app.mainloop()
 
