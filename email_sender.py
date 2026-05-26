@@ -4,6 +4,7 @@ Envio de email via SMTP Gmail.
 - Se EMAIL_USUARIO/SENHA não configurados, NÃO envia mas registra no log.
 - Toda tentativa é registrada em email_logs (sucesso ou falha).
 """
+import html
 import smtplib
 import ssl
 import threading
@@ -13,6 +14,11 @@ from email.mime.text import MIMEText
 from email.utils import formataddr
 
 import config
+
+
+def _esc(s) -> str:
+    """Escapa string para inserção segura em corpo HTML de email."""
+    return html.escape(str(s) if s is not None else '', quote=True)
 
 
 def _esta_configurado() -> bool:
@@ -117,6 +123,7 @@ def email_os_criada(cliente_nome: str, os_id: int, placa: str, problema: str,
                     funcionario: str) -> tuple:
     """Retorna (assunto, corpo_html)."""
     assunto = "Truckstar - Ordem de Serviço Nº {:06d} criada".format(os_id)
+    problema_html = _esc(problema or '---').replace('\n', '<br>')
     corpo = """
     <h2 style="color:#1a4d8f; margin-top:0;">Olá, {nome}!</h2>
     <p>Sua ordem de serviço foi <b>registrada com sucesso</b> em nosso sistema.</p>
@@ -134,8 +141,8 @@ def email_os_criada(cliente_nome: str, os_id: int, placa: str, problema: str,
     <p>Você pode acompanhar o andamento da sua OS acessando o portal Truckstar com seu CPF.</p>
     <p style="margin-top:20px;">Obrigado pela preferência!<br><b>Equipe Truckstar</b></p>
     """.format(
-        nome=cliente_nome, os_id=os_id, placa=placa,
-        func=funcionario, problema=(problema or '---').replace('\n', '<br>')
+        nome=_esc(cliente_nome), os_id=os_id, placa=_esc(placa),
+        func=_esc(funcionario), problema=problema_html
     )
     return assunto, corpo
 
@@ -157,7 +164,8 @@ def email_os_atualizada(cliente_nome: str, os_id: int, placa: str, status: str,
           <td style="padding:8px; border:1px solid #ddd;">R$ {valor:.2f}</td></tr>
     </table>
     <p style="margin-top:20px;"><b>Equipe Truckstar</b></p>
-    """.format(nome=cliente_nome, os_id=os_id, placa=placa, status=status, valor=valor_total)
+    """.format(nome=_esc(cliente_nome), os_id=os_id, placa=_esc(placa),
+               status=_esc(status), valor=valor_total)
     return assunto, corpo
 
 
@@ -169,5 +177,5 @@ def email_boas_vindas(cliente_nome: str) -> tuple:
     <p>Agora você pode acompanhar as ordens de serviço dos seus veículos
     a qualquer momento, basta fazer login com seu <b>CPF e senha</b>.</p>
     <p style="margin-top:20px;">Obrigado por escolher a Truckstar!<br><b>Equipe Truckstar</b></p>
-    """.format(nome=cliente_nome)
+    """.format(nome=_esc(cliente_nome))
     return assunto, corpo

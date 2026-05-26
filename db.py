@@ -1,10 +1,22 @@
 """
 Conexão e schema do banco. Dropa e recria 'truckstar' na primeira chamada de inicializar().
 """
+import re
 import pymysql
 from datetime import date
 import config
 import seguranca
+
+
+_IDENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+
+def _db_ident() -> str:
+    """Valida e retorna o nome do banco quotado com backticks (anti-SQLi em DDL)."""
+    name = config.DB_NAME
+    if not _IDENT_RE.match(name or ''):
+        raise ValueError("DB_NAME inválido: deve casar [A-Za-z_][A-Za-z0-9_]*")
+    return "`{}`".format(name)
 
 
 def conectar():
@@ -29,18 +41,20 @@ def _conectar_sem_db():
 
 
 def dropar_e_recriar():
+    ident = _db_ident()
     conn = _conectar_sem_db()
     cur = conn.cursor()
-    cur.execute("DROP DATABASE IF EXISTS {}".format(config.DB_NAME))
-    cur.execute("CREATE DATABASE {} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci".format(config.DB_NAME))
+    cur.execute("DROP DATABASE IF EXISTS {}".format(ident))
+    cur.execute("CREATE DATABASE {} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci".format(ident))
     cur.close()
     conn.close()
 
 
 def _criar_banco_se_nao_existir():
+    ident = _db_ident()
     conn = _conectar_sem_db()
     cur = conn.cursor()
-    cur.execute("CREATE DATABASE IF NOT EXISTS {} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci".format(config.DB_NAME))
+    cur.execute("CREATE DATABASE IF NOT EXISTS {} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci".format(ident))
     cur.close()
     conn.close()
 
@@ -167,7 +181,7 @@ def _criar_admin_padrao():
         """, ('Administrador', '00000000000', 'Admin', '(00) 00000-0000',
               'admin@truckstar.com', 'admin', h, salt, date.today()))
         conn.commit()
-        print("Admin padrão criado: usuário=admin / senha=admin123")
+        print("[seed] Admin padrão criado. TROQUE A SENHA NO PRIMEIRO LOGIN.")
     cur.close()
     conn.close()
 
