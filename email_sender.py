@@ -91,8 +91,14 @@ def _enviar_sincrono(destinatario: str, assunto: str, corpo_html: str) -> tuple:
 
 def enviar_email(destinatario: str, assunto: str, corpo_html: str, em_thread: bool = True):
     """
-    Envia email via Resend. Por padrão em thread separada (não bloqueia UI).
-    Sempre registra no log (mesmo se não configurado ou falhou).
+    Envia email via Resend e registra no log.
+
+    Quando em_thread=True (default): dispara em background e retorna None
+      imediatamente. A UI nao sabe o resultado.
+
+    Quando em_thread=False: roda sincrono e retorna (sucesso: bool, erro: str).
+      Use isso na UI para mostrar mensagens corretas ao usuario (evita o
+      problema de mostrar "email enviado" antes do Resend retornar erro).
     """
     def tarefa():
         sucesso, erro = _enviar_sincrono(destinatario, assunto, corpo_html)
@@ -101,11 +107,12 @@ def enviar_email(destinatario: str, assunto: str, corpo_html: str, em_thread: bo
             print("[email] Enviado para", destinatario)
         else:
             print("[email] Falha p/", destinatario, "-", erro)
+        return sucesso, erro
 
     if em_thread:
         threading.Thread(target=tarefa, daemon=True).start()
-    else:
-        tarefa()
+        return None
+    return tarefa()
 
 
 # ---------- TEMPLATES PRONTOS ----------

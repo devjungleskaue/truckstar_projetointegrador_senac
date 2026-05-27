@@ -242,10 +242,16 @@ class TelaOrdens(ctk.CTkToplevel):
                 assunto, corpo = email_os_criada(row[0], os_id, v.formatar_placa(row[2]),
                                                  self.t_problema.get("1.0", "end").strip(),
                                                  row[3])
-                enviar_email(row[1], assunto, corpo)
-                messagebox.showinfo("OK",
-                    "Ordem de serviço #{:06d} criada!\nEmail enviado para {}".format(os_id, row[1]),
-                    parent=self)
+                # sincrono: sabemos o resultado real ANTES de mostrar a mensagem
+                sucesso, erro = enviar_email(row[1], assunto, corpo, em_thread=False)
+                if sucesso:
+                    messagebox.showinfo("OK",
+                        "Ordem de serviço #{:06d} criada!\nEmail enviado para {}".format(os_id, row[1]),
+                        parent=self)
+                else:
+                    messagebox.showwarning("OS criada com aviso",
+                        "Ordem de serviço #{:06d} criada,\nmas o email NÃO foi enviado:\n\n{}".format(os_id, erro),
+                        parent=self)
             else:
                 messagebox.showinfo("OK",
                     "Ordem de serviço #{:06d} criada!\n(Cliente sem email cadastrado)".format(os_id),
@@ -581,6 +587,21 @@ class TelaOrdens(ctk.CTkToplevel):
         v_total = round(v_mo + v_pc, 2)
         novo_status = self.cb_status_edit.get()
         status_antigo = self.os_em_edicao['status']
+        servicos_novos = self.t_serv_edit.get("1.0", "end").strip()
+        pecas_novas = self.t_pec_edit.get("1.0", "end").strip()
+
+        # ---- detecta se HOUVE alteracao em qualquer campo editavel ----
+        servicos_antigos = (self.os_em_edicao['servicos_realizados'] or '').strip()
+        pecas_antigas = (self.os_em_edicao['pecas_utilizadas'] or '').strip()
+        v_mo_antigo = float(self.os_em_edicao['valor_mao_obra'] or 0)
+        v_pc_antigo = float(self.os_em_edicao['valor_pecas'] or 0)
+        houve_alteracao = (
+            novo_status != status_antigo
+            or servicos_novos != servicos_antigos
+            or pecas_novas != pecas_antigas
+            or abs(v_mo - v_mo_antigo) > 0.001
+            or abs(v_pc - v_pc_antigo) > 0.001
+        )
 
         data_fech = self.os_em_edicao['data_fechamento']
         if novo_status in ("Concluída", "Cancelada") and not data_fech:
@@ -596,25 +617,53 @@ class TelaOrdens(ctk.CTkToplevel):
                     servicos_realizados=%s, pecas_utilizadas=%s,
                     valor_mao_obra=%s, valor_pecas=%s, valor_total=%s
                 WHERE id=%s
-            """, (novo_status, data_fech,
-                  self.t_serv_edit.get("1.0", "end").strip(),
-                  self.t_pec_edit.get("1.0", "end").strip(),
+            """, (novo_status, data_fech, servicos_novos, pecas_novas,
                   v_mo, v_pc, v_total, self.os_em_edicao['id']))
             conn.commit()
             cur.close()
             conn.close()
 
-            # email se mudou status
-            if novo_status != status_antigo and self.os_em_edicao['cliente_email']:
+            # email a cada ALTERACAO real, nao so mudanca de status.
+            # Sincrono: sabemos o resultado real do Resend antes de mostrar
+            # a mensagem para o usuario (evita "Email enviado" mentiroso).
+            email_status = 'sem_envio'   # sem_envio | sucesso | falha | sem_email
+            email_erro = ''
+            if houve_alteracao and self.os_em_edicao['cliente_email']:
                 assunto, corpo = email_os_atualizada(
                     self.os_em_edicao['cliente_nome'],
                     self.os_em_edicao['id'],
                     v.formatar_placa(self.os_em_edicao['placa']),
                     novo_status, v_total
                 )
-                enviar_email(self.os_em_edicao['cliente_email'], assunto, corpo)
+                sucesso, erro = enviar_email(
+                    self.os_em_edicao['cliente_email'], assunto, corpo,
+                    em_thread=False
+                )
+                if sucesso:
+                    email_status = 'sucesso'
+                else:
+                    email_status = 'falha'
+                    email_erro = erro
+            elif houve_alteracao and not self.os_em_edicao['cliente_email']:
+                email_status = 'sem_email'
 
-            messagebox.showinfo("OK", "Alterações salvas!", parent=self)
+            if not houve_alteracao:
+                messagebox.showinfo("OK",
+                    "Salvo.\n(Nenhuma alteração detectada.)",
+                    parent=self)
+            elif email_status == 'sucesso':
+                messagebox.showinfo("OK",
+                    "Alterações salvas!\nEmail de atualização enviado ao cliente.",
+                    parent=self)
+            elif email_status == 'falha':
+                messagebox.showwarning("Alterações salvas com aviso",
+                    "As alterações foram salvas no banco,\n"
+                    "MAS o email NÃO foi enviado ao cliente:\n\n{}".format(email_erro),
+                    parent=self)
+            elif email_status == 'sem_email':
+                messagebox.showinfo("OK",
+                    "Alterações salvas!\n(Cliente sem email cadastrado — não notificado.)",
+                    parent=self)
             self._listar_todas()
             self._carregar_edit()  # recarrega
         except Exception as e:

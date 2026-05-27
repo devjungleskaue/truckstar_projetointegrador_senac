@@ -232,11 +232,16 @@ class TelaClientes(ctk.CTkToplevel):
             conn.commit()
             cur.close()
             conn.close()
-            # email de boas vindas
+            # email de boas vindas — sincrono pra mostrar resultado real
+            msg_ok = "Cliente cadastrado!"
             if d['email']:
                 assunto, corpo = email_boas_vindas(d['nome'])
-                enviar_email(d['email'], assunto, corpo)
-            messagebox.showinfo("OK", "Cliente cadastrado!", parent=self)
+                sucesso, erro = enviar_email(d['email'], assunto, corpo, em_thread=False)
+                if sucesso:
+                    msg_ok += "\nEmail de boas-vindas enviado."
+                else:
+                    msg_ok += "\n(Aviso: email de boas-vindas NÃO foi enviado.\n{})".format(erro)
+            messagebox.showinfo("OK", msg_ok, parent=self)
             self.limpar()
             self.listar()
         except Exception as e:
