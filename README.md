@@ -1,7 +1,7 @@
 # Truckstar — Sistema de Gestão para Mecânica de Caminhões
 
 Sistema desktop em Python para cadastro de clientes, funcionários, caminhões e
-ordens de serviço. Login dividido por tipo de usuário, envio de email automático
+ordens de serviço. Login exclusivo de funcionário, envio de email automático
 ao cliente, geração de PDF profissional da OS e validação oficial de CPF/CNPJ.
 
 ## Stack
@@ -30,9 +30,9 @@ O script cria o banco `truckstar` automaticamente na primeira execução
 | Admin | `admin` | `admin123` |
 
 Apenas o admin é criado automaticamente na primeira inicialização.
-Demais funcionários (Atendente, Mecânico) e clientes devem ser cadastrados via
-sistema. Cliente faz login com **CPF + senha** na aba "Cliente" — há botão
-"Criar conta de Cliente" para auto-cadastro.
+Demais funcionários (Atendente, Mecânico) e clientes são cadastrados via
+sistema. Cliente **não faz login** — interage apenas como destinatário de
+emails sobre suas Ordens de Serviço.
 
 > ⚠️ **Troque a senha do admin imediatamente após o primeiro login** via tela
 > de Funcionários. A senha padrão `admin123` é apenas para bootstrap.
@@ -44,21 +44,19 @@ sistema. Cliente faz login com **CPF + senha** na aba "Cliente" — há botão
 | Admin      | ✓        | ✓            | ✓        | ✓         | ✓          |
 | Atendente  | ✓        | —            | ✓        | ✓         | —          |
 | Mecânico   | —        | —            | —        | só suas   | —          |
-| Cliente    | só visualiza | —        | —        | —         | —          |
 
 ## Funcionalidades
 
-- Login dividido (Funcionário / Cliente) com hash PBKDF2-SHA256 + salt
+- Login de funcionário com hash PBKDF2-SHA256 + salt
 - Rate limit em memória contra brute-force (5 tentativas / 60s)
 - Validação oficial de CPF/CNPJ (dígitos verificadores)
 - Autocomplete de endereço via API ViaCEP
 - Geração de PDF profissional da OS (com endereço completo, valores, assinaturas)
-- Envio automático de email ao cliente:
+- Envio automático de email ao cliente (síncrono, com confirmação real de entrega):
   - Boas-vindas no cadastro
   - OS criada
-  - OS atualizada (mudança de status)
+  - OS atualizada — em **qualquer alteração** de status, serviços, peças ou valores
 - Consulta de OS por placa ou nome do cliente
-- Painel cliente read-only (vê seus veículos, OS, baixa PDF)
 - Atalhos: `F11` fullscreen, `Esc` sair, `Ctrl+M` maximizar
 - Botão "Sair (Logout)" em todas as telas pós-login
 
@@ -76,8 +74,7 @@ sistema. Cliente faz login com **CPF + senha** na aba "Cliente" — há botão
 ├── main.py              # entry point + login + roteamento
 ├── tela_clientes.py     # CRUD clientes + caminhões
 ├── tela_funcionarios.py # CRUD funcionários
-├── tela_ordens.py       # CRUD OS + consulta + PDF + email
-└── tela_cliente.py      # portal read-only do cliente
+└── tela_ordens.py       # CRUD OS + consulta + PDF + email
 ```
 
 ## Configuração de email (Resend)
@@ -93,18 +90,44 @@ sistema. Cliente faz login com **CPF + senha** na aba "Cliente" — há botão
 Se `RESEND_API_KEY` ficar vazia, o app continua funcionando normalmente, apenas
 não envia emails (cada tentativa é registrada na tabela `email_logs` com erro).
 
-> ℹ️ No free tier do Resend, o `EMAIL_FROM` precisa ser `onboarding@resend.dev`
-> ou um endereço em domínio próprio verificado — não dá pra usar
-> `@gmail.com`/`@outlook.com` como remetente porque você não possui esses
-> domínios. O fluxo correto é usar o sender pré-aprovado **e** o `EMAIL_REPLY_TO`
-> apontando pro seu Gmail real (assim cliente vê "Truckstar Mecânica" como
-> remetente e respostas vão pro seu Gmail).
+### ⚠️ Limitação crítica do free tier do Resend
+
+No plano gratuito, **sem domínio próprio verificado**, o Resend só entrega
+emails para **um único destinatário**: o email com que você criou a conta
+Resend (chamado *owner email*).
+
+**Tentativas de enviar para qualquer outro email** (cliente real, gmail de
+terceiros, etc.) são **rejeitadas pela API do Resend** com a mensagem:
+
+> "You can only send testing emails to your own email address"
+
+O app trata isso corretamente — não mostra "Email enviado" mentirosamente. Se
+o Resend recusar, aparece um aviso "Alterações salvas com aviso: email NÃO
+enviado". Mas o cliente não recebe nada.
+
+**Como liberar envio para clientes reais:**
+
+1. Compre/registre um domínio (ex: `truckstarmecanica.com.br`)
+2. Verifique em https://resend.com/domains (instruções DNS automáticas)
+3. Altere `EMAIL_FROM` no `config.py` para algo do tipo `oficina@truckstarmecanica.com.br`
+4. Pronto — passa a entregar para qualquer destinatário
+
+Para **testar localmente sem domínio**: cadastre o cliente fictício com o
+mesmo email da conta Resend, ou use o endereço de simulação oficial
+`delivered@resend.dev`.
+
+### Sobre o sender
+
+`onboarding@resend.dev` é o remetente pré-aprovado do Resend. Você **não
+consegue** trocar para `@gmail.com` ou `@outlook.com` no FROM porque não é
+dono desses domínios. Use o sender padrão **e** configure `EMAIL_REPLY_TO`
+apontando pro Gmail da oficina — assim o cliente vê "Truckstar Mecânica"
+como remetente, e qualquer resposta cai na sua caixa real.
 
 ## Notas de segurança
 
 - `config.py` está no `.gitignore` — nunca versione credenciais (API key inclusive)
 - Senhas no banco são armazenadas como hash PBKDF2-SHA256 (600k iterações, conforme OWASP 2023) + salt aleatório de 16 bytes
 - Comparação de senhas é resistente a timing attacks (`hmac.compare_digest`)
-- Rate limiting em memória: 5 tentativas / 60s por usuário ou CPF
+- Rate limiting em memória: 5 tentativas / 60s por usuário
 - Todo SQL é parametrizado (sem concatenação de strings)
-- Cliente só acessa suas próprias OS (filtro `cliente_id` no SQL)
