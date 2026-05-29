@@ -11,6 +11,7 @@ import validacoes as v
 import seguranca
 import config
 from ui_utils import habilitar_resize_e_fullscreen, botao_tela_cheia
+from ui_helpers import mostrar_erro
 
 
 class TelaFuncionarios(ctk.CTkToplevel):
@@ -175,7 +176,7 @@ class TelaFuncionarios(ctk.CTkToplevel):
             self.limpar()
             self.listar()
         except Exception as e:
-            messagebox.showerror("Erro", str(e), parent=self)
+            mostrar_erro(self, "Não foi possível salvar. Verifique se CPF ou usuário já existem.", e)
 
     def atualizar(self):
         if not self.id_atual:
@@ -212,7 +213,7 @@ class TelaFuncionarios(ctk.CTkToplevel):
             self.limpar()
             self.listar()
         except Exception as e:
-            messagebox.showerror("Erro", str(e), parent=self)
+            mostrar_erro(self, "Não foi possível atualizar o funcionário.", e)
 
     def excluir(self):
         if not self.id_atual:
@@ -232,9 +233,7 @@ class TelaFuncionarios(ctk.CTkToplevel):
             self.limpar()
             self.listar()
         except Exception as e:
-            messagebox.showerror("Erro",
-                "Não foi possível excluir (funcionário possui OS vinculadas): " + str(e),
-                parent=self)
+            mostrar_erro(self, "Não foi possível excluir. O funcionário pode ter OS vinculadas.", e)
 
     def limpar(self):
         self.id_atual = None

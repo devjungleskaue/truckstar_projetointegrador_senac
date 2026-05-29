@@ -170,9 +170,11 @@ def email_boas_vindas(cliente_nome: str) -> tuple:
     assunto = "Bem-vindo(a) à Truckstar!"
     corpo = """
     <h2 style="color:#1a4d8f; margin-top:0;">Bem-vindo(a), {nome}!</h2>
-    <p>Seu cadastro foi realizado com sucesso no portal Truckstar.</p>
-    <p>Agora você pode acompanhar as ordens de serviço dos seus veículos
-    a qualquer momento, basta fazer login com seu <b>CPF e senha</b>.</p>
+    <p>Seu cadastro foi realizado com sucesso na Truckstar.</p>
+    <p>A partir de agora, você receberá <b>notificações automáticas por email</b>
+    sempre que uma Ordem de Serviço do seu veículo for aberta ou atualizada.</p>
+    <p>Para dúvidas ou agendamentos, basta responder este email — nossa equipe
+    está à disposição.</p>
     <p style="margin-top:20px;">Obrigado por escolher a Truckstar!<br><b>Equipe Truckstar</b></p>
     """.format(nome=_esc(cliente_nome))
     return assunto, corpo

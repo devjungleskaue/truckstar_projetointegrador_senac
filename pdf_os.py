@@ -1,6 +1,7 @@
 """
 Gera PDF profissional da Ordem de Serviço.
 """
+import html
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -9,6 +10,12 @@ from reportlab.lib.units import cm
 from datetime import datetime
 
 import validacoes as v
+
+
+def _esc_paragraph(texto) -> str:
+    """Escapa conteúdo de usuário para uso seguro em Paragraph (ReportLab usa
+    markup HTML-like — `<` e `>` em texto cru viram tags inválidas e quebram)."""
+    return html.escape(str(texto) if texto is not None else '', quote=True)
 
 
 def _fmt_data(d):
@@ -153,7 +160,8 @@ def gerar_pdf_os(dados: dict, caminho_arquivo: str) -> str:
     # TEXTOS
     def secao_texto(titulo_s, conteudo):
         el.append(Paragraph(titulo_s, h3))
-        txt = str(conteudo or '---').replace('\n', '<br/>').replace('&', '&amp;')
+        # Escapa primeiro, depois substitui \n por <br/> (markup ReportLab valido)
+        txt = _esc_paragraph(conteudo or '---').replace('\n', '<br/>')
         el.append(Paragraph(txt, estilos['Normal']))
         el.append(Spacer(1, 0.3*cm))
 
