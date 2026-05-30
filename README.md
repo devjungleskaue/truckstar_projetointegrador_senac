@@ -68,7 +68,7 @@ emails sobre suas Ordens de Serviço.
 ├── db.py                # schema e conexão pymysql
 ├── seguranca.py         # hash PBKDF2 + salt
 ├── validacoes.py        # CPF/CNPJ/email/placa/CEP
-├── email_sender.py      # SMTP Gmail + templates HTML + thread
+├── email_sender.py      # envio Resend API + templates HTML
 ├── pdf_os.py            # gerador de PDF da OS
 ├── ui_utils.py          # helpers de resize/fullscreen
 ├── main.py              # entry point + login + roteamento

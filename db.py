@@ -96,14 +96,21 @@ def criar_tabelas():
             bairro VARCHAR(80),
             cidade VARCHAR(80),
             estado CHAR(2),
-            senha_hash CHAR(64) NOT NULL,
-            senha_salt CHAR(32) NOT NULL,
+            senha_hash CHAR(64) NULL,
+            senha_salt CHAR(32) NULL,
             ativo TINYINT(1) DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_cli_cpf (cpf_cnpj),
             INDEX idx_cli_nome (nome)
         ) ENGINE=InnoDB
     """)
+
+    # Migracao: se schema antigo (NOT NULL nas senhas) existir, relaxa
+    try:
+        cur.execute("ALTER TABLE clientes MODIFY senha_hash CHAR(64) NULL")
+        cur.execute("ALTER TABLE clientes MODIFY senha_salt CHAR(32) NULL")
+    except Exception:
+        pass  # ja esta NULL ou tabela acabou de ser criada
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS caminhoes (
@@ -178,12 +185,30 @@ def _criar_admin_padrao():
             INSERT INTO funcionarios
             (nome, cpf, cargo, telefone, email, usuario, senha_hash, senha_salt, data_admissao)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, ('Administrador', '00000000000', 'Admin', '(00) 00000-0000',
+        """, ('Administrador', '11144477735', 'Admin', '(00) 00000-0000',
               'admin@truckstar.com', 'admin', h, salt, date.today()))
         conn.commit()
         print("[seed] Admin padrão criado. TROQUE A SENHA NO PRIMEIRO LOGIN.")
     cur.close()
     conn.close()
+
+
+def _migrar_admin_cpf_legado():
+    """Atualiza CPF do admin seedado caso ainda esteja com o valor invalido
+    antigo ('00000000000'). Idempotente. Falha silenciosa se colidir com
+    outro funcionario."""
+    try:
+        conn = conectar()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE funcionarios SET cpf='11144477735'
+            WHERE usuario='admin' AND cpf='00000000000'
+        """)
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print("[migration] CPF do admin legado nao migrado:", e)
 
 
 def inicializar(recriar: bool = False):
@@ -197,6 +222,7 @@ def inicializar(recriar: bool = False):
         _criar_banco_se_nao_existir()
     criar_tabelas()
     _criar_admin_padrao()
+    _migrar_admin_cpf_legado()
 
 
 if __name__ == '__main__':

@@ -1,7 +1,7 @@
 """
 CRUD de clientes (apenas para Admin/Atendente).
 Inclui: validação de CPF/CNPJ, email, telefone, autocompletar endereço por CEP.
-Cadastra senha (hash) - cliente pode logar com CPF + senha.
+Cliente nao faz login — recebe apenas emails de notificacao das OS.
 """
 import threading
 import customtkinter as ctk
@@ -9,10 +9,9 @@ from tkinter import messagebox, ttk
 
 from db import conectar
 import validacoes as v
-import seguranca
 from email_sender import enviar_email, email_boas_vindas
-import config
 from ui_utils import habilitar_resize_e_fullscreen, botao_tela_cheia
+from ui_helpers import mostrar_erro
 
 
 class TelaClientes(ctk.CTkToplevel):
@@ -107,25 +106,20 @@ class TelaClientes(ctk.CTkToplevel):
         self.e_cidade = ctk.CTkEntry(frm, width=200)
         self.e_cidade.grid(row=5, column=3, padx=5, pady=4)
 
-        # linha 6 - complemento + senha
+        # linha 6 - complemento
         ctk.CTkLabel(frm, text="Complemento:").grid(row=6, column=0, sticky="e", padx=5, pady=4)
         self.e_comp = ctk.CTkEntry(frm, width=300)
         self.e_comp.grid(row=6, column=1, padx=5, pady=4)
-
-        ctk.CTkLabel(frm, text="Senha:").grid(row=6, column=2, sticky="e", padx=5, pady=4)
-        self.e_senha = ctk.CTkEntry(frm, width=200, show="*")
-        self.e_senha.grid(row=6, column=3, padx=5, pady=4)
-
-        ctk.CTkLabel(frm, text="(Senha em branco no Atualizar = mantém atual)",
-                     font=("Arial", 9), text_color="gray").grid(row=7, column=2, columnspan=2)
 
     def _montar_botoes(self):
         frm = ctk.CTkFrame(self)
         frm.pack(fill="x", padx=10, pady=5)
         ctk.CTkButton(frm, text="Salvar", command=self.salvar).pack(side="left", padx=5)
         ctk.CTkButton(frm, text="Atualizar", command=self.atualizar).pack(side="left", padx=5)
-        ctk.CTkButton(frm, text="Excluir", command=self.excluir,
-                      fg_color="darkred").pack(side="left", padx=5)
+        # Excluir: so Admin (Atendente nao pode — botao oculto pra ele)
+        if self.usuario['cargo'] == 'Admin':
+            ctk.CTkButton(frm, text="Excluir", command=self.excluir,
+                          fg_color="darkred").pack(side="left", padx=5)
         ctk.CTkButton(frm, text="Limpar", command=self.limpar).pack(side="left", padx=5)
         ctk.CTkButton(frm, text="Caminhões do Cliente",
                       command=self.abrir_caminhoes).pack(side="left", padx=5)
@@ -187,10 +181,9 @@ class TelaClientes(ctk.CTkToplevel):
             'bairro': self.e_bairro.get().strip(),
             'cidade': self.e_cidade.get().strip(),
             'estado': self.e_estado.get().strip().upper(),
-            'senha': self.e_senha.get(),
         }
 
-    def _validar(self, d: dict, eh_novo: bool) -> str:
+    def _validar(self, d: dict) -> str:
         if not d['nome'] or len(d['nome']) < 3:
             return "Nome obrigatório (mín. 3 caracteres)"
         if not v.validar_cpf_ou_cnpj(d['cpf']):
@@ -203,32 +196,24 @@ class TelaClientes(ctk.CTkToplevel):
             return "CEP deve ter 8 dígitos"
         if d['estado'] and len(d['estado']) != 2:
             return "Estado deve ter 2 letras (UF)"
-        if eh_novo:
-            if not d['senha'] or len(d['senha']) < config.SENHA_MIN_CARACTERES:
-                return "Senha obrigatória (mín. {} caracteres)".format(config.SENHA_MIN_CARACTERES)
-        elif d['senha'] and len(d['senha']) < config.SENHA_MIN_CARACTERES:
-            return "Nova senha deve ter mín. {} caracteres".format(config.SENHA_MIN_CARACTERES)
         return ''
 
     def salvar(self):
         d = self._coletar()
-        erro = self._validar(d, eh_novo=True)
+        erro = self._validar(d)
         if erro:
             messagebox.showwarning("Atenção", erro, parent=self)
             return
-        salt = seguranca.gerar_salt()
-        h = seguranca.hash_senha(d['senha'], salt)
         try:
             conn = conectar()
             cur = conn.cursor()
             cur.execute("""
                 INSERT INTO clientes (nome, cpf_cnpj, telefone, email, cep, logradouro,
-                    numero, complemento, bairro, cidade, estado, senha_hash, senha_salt)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    numero, complemento, bairro, cidade, estado)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (d['nome'], d['cpf'], d['tel'], d['email'], d['cep'] or None,
                   d['log'] or None, d['num'] or None, d['comp'] or None,
-                  d['bairro'] or None, d['cidade'] or None, d['estado'] or None,
-                  h, salt))
+                  d['bairro'] or None, d['cidade'] or None, d['estado'] or None))
             conn.commit()
             cur.close()
             conn.close()
@@ -245,43 +230,29 @@ class TelaClientes(ctk.CTkToplevel):
             self.limpar()
             self.listar()
         except Exception as e:
-            messagebox.showerror("Erro", "Erro ao salvar: " + str(e), parent=self)
+            mostrar_erro(self, "Não foi possível salvar o cliente. Verifique se o CPF/CNPJ já está cadastrado.", e)
 
     def atualizar(self):
         if not self.id_atual:
             messagebox.showwarning("Atenção", "Selecione um cliente na lista", parent=self)
             return
         d = self._coletar()
-        erro = self._validar(d, eh_novo=False)
+        erro = self._validar(d)
         if erro:
             messagebox.showwarning("Atenção", erro, parent=self)
             return
         try:
             conn = conectar()
             cur = conn.cursor()
-            if d['senha']:
-                salt = seguranca.gerar_salt()
-                h = seguranca.hash_senha(d['senha'], salt)
-                cur.execute("""
-                    UPDATE clientes SET nome=%s, cpf_cnpj=%s, telefone=%s, email=%s,
-                        cep=%s, logradouro=%s, numero=%s, complemento=%s,
-                        bairro=%s, cidade=%s, estado=%s,
-                        senha_hash=%s, senha_salt=%s
-                    WHERE id=%s
-                """, (d['nome'], d['cpf'], d['tel'], d['email'], d['cep'] or None,
-                      d['log'] or None, d['num'] or None, d['comp'] or None,
-                      d['bairro'] or None, d['cidade'] or None, d['estado'] or None,
-                      h, salt, self.id_atual))
-            else:
-                cur.execute("""
-                    UPDATE clientes SET nome=%s, cpf_cnpj=%s, telefone=%s, email=%s,
-                        cep=%s, logradouro=%s, numero=%s, complemento=%s,
-                        bairro=%s, cidade=%s, estado=%s
-                    WHERE id=%s
-                """, (d['nome'], d['cpf'], d['tel'], d['email'], d['cep'] or None,
-                      d['log'] or None, d['num'] or None, d['comp'] or None,
-                      d['bairro'] or None, d['cidade'] or None, d['estado'] or None,
-                      self.id_atual))
+            cur.execute("""
+                UPDATE clientes SET nome=%s, cpf_cnpj=%s, telefone=%s, email=%s,
+                    cep=%s, logradouro=%s, numero=%s, complemento=%s,
+                    bairro=%s, cidade=%s, estado=%s
+                WHERE id=%s
+            """, (d['nome'], d['cpf'], d['tel'], d['email'], d['cep'] or None,
+                  d['log'] or None, d['num'] or None, d['comp'] or None,
+                  d['bairro'] or None, d['cidade'] or None, d['estado'] or None,
+                  self.id_atual))
             conn.commit()
             cur.close()
             conn.close()
@@ -289,7 +260,7 @@ class TelaClientes(ctk.CTkToplevel):
             self.limpar()
             self.listar()
         except Exception as e:
-            messagebox.showerror("Erro", str(e), parent=self)
+            mostrar_erro(self, "Não foi possível atualizar o cliente.", e)
 
     def excluir(self):
         if self.usuario['cargo'] != 'Admin':
@@ -311,15 +282,13 @@ class TelaClientes(ctk.CTkToplevel):
             self.limpar()
             self.listar()
         except Exception as e:
-            messagebox.showerror("Erro",
-                "Não foi possível excluir (cliente possui OS vinculadas): " + str(e),
-                parent=self)
+            mostrar_erro(self, "Não foi possível excluir. O cliente pode ter OS vinculadas.", e)
 
     def limpar(self):
         self.id_atual = None
         for e in [self.e_nome, self.e_cpf, self.e_tel, self.e_email, self.e_cep,
                   self.e_log, self.e_num, self.e_comp, self.e_bairro,
-                  self.e_cidade, self.e_estado, self.e_senha]:
+                  self.e_cidade, self.e_estado]:
             e.delete(0, "end")
 
     def listar(self):
@@ -335,19 +304,19 @@ class TelaClientes(ctk.CTkToplevel):
                 like_num = "%" + busca_num + "%"
                 cur.execute("""
                     SELECT id, nome, cpf_cnpj, telefone, email, cidade, estado
-                    FROM clientes WHERE nome LIKE %s OR cpf_cnpj LIKE %s
+                    FROM clientes WHERE ativo=1 AND (nome LIKE %s OR cpf_cnpj LIKE %s)
                     ORDER BY nome LIMIT 500
                 """, (like, like_num))
             else:
                 cur.execute("""
                     SELECT id, nome, cpf_cnpj, telefone, email, cidade, estado
-                    FROM clientes WHERE nome LIKE %s
+                    FROM clientes WHERE ativo=1 AND nome LIKE %s
                     ORDER BY nome LIMIT 500
                 """, (like,))
         else:
             cur.execute("""
                 SELECT id, nome, cpf_cnpj, telefone, email, cidade, estado
-                FROM clientes ORDER BY nome LIMIT 500
+                FROM clientes WHERE ativo=1 ORDER BY nome LIMIT 500
             """)
         for r in cur.fetchall():
             cid_uf = "{}/{}".format(r[5] or '', r[6] or '').strip('/')
@@ -490,7 +459,7 @@ class TelaCaminhoes(ctk.CTkToplevel):
             self.limpar()
             self.listar()
         except Exception as e:
-            messagebox.showerror("Erro", str(e), parent=self)
+            mostrar_erro(self, "Não foi possível salvar o caminhão. Verifique se a placa já está cadastrada.", e)
 
     def excluir(self):
         if not self.id_atual:
@@ -507,9 +476,7 @@ class TelaCaminhoes(ctk.CTkToplevel):
             self.limpar()
             self.listar()
         except Exception as e:
-            messagebox.showerror("Erro",
-                "Não foi possível excluir (existem OS vinculadas): " + str(e),
-                parent=self)
+            mostrar_erro(self, "Não foi possível excluir o caminhão. Pode haver OS vinculadas.", e)
 
     def limpar(self):
         self.id_atual = None
