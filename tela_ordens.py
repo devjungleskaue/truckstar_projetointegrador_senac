@@ -19,6 +19,7 @@ from pdf_os import gerar_pdf_os
 import validacoes as v
 from email_sender import enviar_email, email_os_criada, email_os_atualizada
 from ui_utils import habilitar_resize_e_fullscreen, botao_tela_cheia
+from ui_helpers import mostrar_erro
 
 
 class TelaOrdens(ctk.CTkToplevel):
@@ -261,7 +262,7 @@ class TelaOrdens(ctk.CTkToplevel):
             # recarregar consulta
             self._listar_todas()
         except Exception as e:
-            messagebox.showerror("Erro", str(e), parent=self)
+            mostrar_erro(self, "Não foi possível criar a Ordem de Serviço.", e)
 
     def _limpar_nova(self):
         self.t_problema.delete("1.0", "end")
@@ -430,7 +431,7 @@ class TelaOrdens(ctk.CTkToplevel):
             except Exception:
                 pass
         except Exception as e:
-            messagebox.showerror("Erro", "Falha ao gerar PDF: " + str(e), parent=self)
+            mostrar_erro(self, "Falha ao gerar PDF da Ordem de Serviço.", e)
 
     def _ver_detalhes(self):
         os_id = self._os_id_selecionada()
@@ -498,7 +499,7 @@ class TelaOrdens(ctk.CTkToplevel):
             conn.close()
             self._listar_todas()
         except Exception as e:
-            messagebox.showerror("Erro", str(e), parent=self)
+            mostrar_erro(self, "Não foi possível excluir a Ordem de Serviço.", e)
 
     # =================== EDITAR ===================
     def _aba_editar(self):
@@ -667,4 +668,4 @@ class TelaOrdens(ctk.CTkToplevel):
             self._listar_todas()
             self._carregar_edit()  # recarrega
         except Exception as e:
-            messagebox.showerror("Erro", str(e), parent=self)
+            mostrar_erro(self, "Não foi possível salvar as alterações.", e)

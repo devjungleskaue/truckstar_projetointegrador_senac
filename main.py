@@ -13,6 +13,7 @@ import config
 from db import conectar, inicializar
 import seguranca
 from ui_utils import habilitar_resize_e_fullscreen, botao_tela_cheia
+from ui_helpers import mostrar_erro
 
 
 ctk.set_appearance_mode("dark")
@@ -106,7 +107,7 @@ class TelaLogin(ctk.CTk):
             cur.close()
             conn.close()
         except Exception as e:
-            messagebox.showerror("Erro", "Erro no banco: " + str(e), parent=self)
+            mostrar_erro(self, "Não foi possível verificar credenciais. Tente novamente.", e)
             return
 
         if not r or not seguranca.verificar_senha(senha, r[4], r[3]):
@@ -193,8 +194,12 @@ class TelaPrincipal(ctk.CTkToplevel):
 
     def sair(self):
         self.destroy()
-        self.login_window.limpar_campos()
-        self.login_window.deiconify()
+        # Defensivo: se login_window foi destruida (X manual), evita exception
+        try:
+            self.login_window.limpar_campos()
+            self.login_window.deiconify()
+        except Exception:
+            pass
 
 
 def main():
