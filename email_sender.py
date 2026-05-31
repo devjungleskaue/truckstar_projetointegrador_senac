@@ -26,17 +26,13 @@ def _esta_configurado() -> bool:
 def _registrar_log(destinatario: str, assunto: str, sucesso: bool, erro: str = ''):
     """Salva no banco. Importa db aqui pra evitar import circular."""
     try:
-        from db import conectar
-        conn = conectar()
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO email_logs (destinatario, assunto, sucesso, erro, enviado_em)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (destinatario or '', assunto or '', 1 if sucesso else 0,
-              (erro or '')[:500], datetime.now()))
-        conn.commit()
-        cur.close()
-        conn.close()
+        from db import cursor
+        with cursor() as (conn, cur):
+            cur.execute("""
+                INSERT INTO email_logs (destinatario, assunto, sucesso, erro, enviado_em)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (destinatario or '', assunto or '', 1 if sucesso else 0,
+                  (erro or '')[:500], datetime.now()))
     except Exception as e:
         print("[email_log] Falha ao registrar:", e)
 

@@ -6,7 +6,7 @@ Valida CPF, email, telefone.
 import customtkinter as ctk
 from tkinter import messagebox, ttk
 
-from db import conectar
+from db import cursor
 import validacoes as v
 import seguranca
 import config
@@ -161,17 +161,13 @@ class TelaFuncionarios(ctk.CTkToplevel):
         salt = seguranca.gerar_salt()
         h = seguranca.hash_senha(d['senha'], salt)
         try:
-            conn = conectar()
-            cur = conn.cursor()
-            cur.execute("""
-                INSERT INTO funcionarios (nome, cpf, cargo, telefone, email,
-                    usuario, senha_hash, senha_salt, data_admissao)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (d['nome'], d['cpf'], d['cargo'], d['tel'], d['email'],
-                  d['usuario'], h, salt, d['data']))
-            conn.commit()
-            cur.close()
-            conn.close()
+            with cursor() as (conn, cur):
+                cur.execute("""
+                    INSERT INTO funcionarios (nome, cpf, cargo, telefone, email,
+                        usuario, senha_hash, senha_salt, data_admissao)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (d['nome'], d['cpf'], d['cargo'], d['tel'], d['email'],
+                      d['usuario'], h, salt, d['data']))
             messagebox.showinfo("OK", "Funcionário cadastrado!", parent=self)
             self.limpar()
             self.listar()
@@ -188,27 +184,23 @@ class TelaFuncionarios(ctk.CTkToplevel):
             messagebox.showwarning("Atenção", erro, parent=self)
             return
         try:
-            conn = conectar()
-            cur = conn.cursor()
-            if d['senha']:
-                salt = seguranca.gerar_salt()
-                h = seguranca.hash_senha(d['senha'], salt)
-                cur.execute("""
-                    UPDATE funcionarios SET nome=%s, cpf=%s, cargo=%s, telefone=%s,
-                        email=%s, usuario=%s, senha_hash=%s, senha_salt=%s, data_admissao=%s
-                    WHERE id=%s
-                """, (d['nome'], d['cpf'], d['cargo'], d['tel'], d['email'],
-                      d['usuario'], h, salt, d['data'], self.id_atual))
-            else:
-                cur.execute("""
-                    UPDATE funcionarios SET nome=%s, cpf=%s, cargo=%s, telefone=%s,
-                        email=%s, usuario=%s, data_admissao=%s
-                    WHERE id=%s
-                """, (d['nome'], d['cpf'], d['cargo'], d['tel'], d['email'],
-                      d['usuario'], d['data'], self.id_atual))
-            conn.commit()
-            cur.close()
-            conn.close()
+            with cursor() as (conn, cur):
+                if d['senha']:
+                    salt = seguranca.gerar_salt()
+                    h = seguranca.hash_senha(d['senha'], salt)
+                    cur.execute("""
+                        UPDATE funcionarios SET nome=%s, cpf=%s, cargo=%s, telefone=%s,
+                            email=%s, usuario=%s, senha_hash=%s, senha_salt=%s, data_admissao=%s
+                        WHERE id=%s
+                    """, (d['nome'], d['cpf'], d['cargo'], d['tel'], d['email'],
+                          d['usuario'], h, salt, d['data'], self.id_atual))
+                else:
+                    cur.execute("""
+                        UPDATE funcionarios SET nome=%s, cpf=%s, cargo=%s, telefone=%s,
+                            email=%s, usuario=%s, data_admissao=%s
+                        WHERE id=%s
+                    """, (d['nome'], d['cpf'], d['cargo'], d['tel'], d['email'],
+                          d['usuario'], d['data'], self.id_atual))
             messagebox.showinfo("OK", "Funcionário atualizado!", parent=self)
             self.limpar()
             self.listar()
@@ -224,12 +216,8 @@ class TelaFuncionarios(ctk.CTkToplevel):
         if not messagebox.askyesno("Confirmar", "Excluir este funcionário?", parent=self):
             return
         try:
-            conn = conectar()
-            cur = conn.cursor()
-            cur.execute("DELETE FROM funcionarios WHERE id=%s", (self.id_atual,))
-            conn.commit()
-            cur.close()
-            conn.close()
+            with cursor() as (conn, cur):
+                cur.execute("DELETE FROM funcionarios WHERE id=%s", (self.id_atual,))
             self.limpar()
             self.listar()
         except Exception as e:
@@ -246,42 +234,45 @@ class TelaFuncionarios(ctk.CTkToplevel):
         for i in self.tree.get_children():
             self.tree.delete(i)
         busca = self.e_busca.get().strip()
-        conn = conectar()
-        cur = conn.cursor()
-        if busca:
-            like = "%" + busca + "%"
-            cur.execute("""
-                SELECT id, nome, cpf, cargo, telefone, usuario, ativo FROM funcionarios
-                WHERE nome LIKE %s OR cpf LIKE %s OR usuario LIKE %s
-                ORDER BY nome LIMIT 500
-            """, (like, like, like))
-        else:
-            cur.execute("""
-                SELECT id, nome, cpf, cargo, telefone, usuario, ativo FROM funcionarios
-                ORDER BY nome LIMIT 500
-            """)
-        for r in cur.fetchall():
+        try:
+            with cursor() as (conn, cur):
+                if busca:
+                    like = "%" + busca + "%"
+                    cur.execute("""
+                        SELECT id, nome, cpf, cargo, telefone, usuario, ativo FROM funcionarios
+                        WHERE nome LIKE %s OR cpf LIKE %s OR usuario LIKE %s
+                        ORDER BY nome LIMIT 500
+                    """, (like, like, like))
+                else:
+                    cur.execute("""
+                        SELECT id, nome, cpf, cargo, telefone, usuario, ativo FROM funcionarios
+                        ORDER BY nome LIMIT 500
+                    """)
+                linhas = cur.fetchall()
+        except Exception as e:
+            mostrar_erro(self, "Não foi possível carregar a lista de funcionários.", e)
+            return
+        for r in linhas:
             self.tree.insert("", "end", values=(
                 r[0], r[1], v.formatar_cpf(r[2] or ''), r[3],
                 v.formatar_telefone(r[4] or ''), r[5], 'Sim' if r[6] else 'Não'
             ))
-        cur.close()
-        conn.close()
 
     def selecionar(self, event):
         sel = self.tree.selection()
         if not sel:
             return
         self.id_atual = int(self.tree.item(sel[0], "values")[0])
-        conn = conectar()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT nome, cpf, cargo, telefone, email, usuario, data_admissao
-            FROM funcionarios WHERE id=%s
-        """, (self.id_atual,))
-        r = cur.fetchone()
-        cur.close()
-        conn.close()
+        try:
+            with cursor() as (conn, cur):
+                cur.execute("""
+                    SELECT nome, cpf, cargo, telefone, email, usuario, data_admissao
+                    FROM funcionarios WHERE id=%s
+                """, (self.id_atual,))
+                r = cur.fetchone()
+        except Exception as e:
+            mostrar_erro(self, "Não foi possível carregar o funcionário.", e)
+            return
         if not r:
             return
         id_bak = self.id_atual

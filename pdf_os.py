@@ -72,7 +72,11 @@ def gerar_pdf_os(dados: dict, caminho_arquivo: str) -> str:
     el.append(Spacer(1, 0.4*cm))
 
     # cabeçalho azul
-    num = "OS Nº {:06d}".format(int(dados.get('id', 0)))
+    try:
+        os_id = int(dados.get('id') or 0)
+    except (TypeError, ValueError):
+        os_id = 0
+    num = "OS Nº {:06d}".format(os_id)
     cab = Table([[num, "Status: " + str(dados.get('status', ''))]],
                 colWidths=[8*cm, 8*cm])
     cab.setStyle(TableStyle([
