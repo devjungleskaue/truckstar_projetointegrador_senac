@@ -2,6 +2,8 @@
 Conexão e schema do banco. Dropa e recria 'truckstar' na primeira chamada de inicializar().
 """
 import re
+from contextlib import contextmanager
+
 import pymysql
 from datetime import date
 import config
@@ -40,29 +42,67 @@ def _conectar_sem_db():
     )
 
 
+@contextmanager
+def cursor():
+    """
+    Context manager que garante fechamento da conexão mesmo em exceção.
+    Commita ao sair sem erro, faz rollback se houver exceção.
+
+    Uso:
+        with cursor() as (conn, cur):
+            cur.execute("SELECT ...")
+            linhas = cur.fetchall()
+        # conexao fechada aqui, commitada (ou rollback se deu erro)
+
+    Resolve o connection leak do padrão antigo (conectar()/.../close())
+    onde uma exceção entre abrir e fechar deixava a conexão pendurada
+    com transação aberta (autocommit=False).
+    """
+    conn = conectar()
+    try:
+        cur = conn.cursor()
+        yield conn, cur
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def dropar_e_recriar():
     ident = _db_ident()
     conn = _conectar_sem_db()
-    cur = conn.cursor()
-    cur.execute("DROP DATABASE IF EXISTS {}".format(ident))
-    cur.execute("CREATE DATABASE {} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci".format(ident))
-    cur.close()
-    conn.close()
+    try:
+        cur = conn.cursor()
+        cur.execute("DROP DATABASE IF EXISTS {}".format(ident))
+        cur.execute("CREATE DATABASE {} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci".format(ident))
+    finally:
+        conn.close()
 
 
 def _criar_banco_se_nao_existir():
     ident = _db_ident()
     conn = _conectar_sem_db()
-    cur = conn.cursor()
-    cur.execute("CREATE DATABASE IF NOT EXISTS {} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci".format(ident))
-    cur.close()
-    conn.close()
+    try:
+        cur = conn.cursor()
+        cur.execute("CREATE DATABASE IF NOT EXISTS {} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci".format(ident))
+    finally:
+        conn.close()
 
 
 def criar_tabelas():
-    conn = conectar()
-    cur = conn.cursor()
+    with cursor() as (conn, cur):
+        _criar_tabelas_cur(cur)
 
+
+def _criar_tabelas_cur(cur):
     cur.execute("""
         CREATE TABLE IF NOT EXISTS funcionarios (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -169,28 +209,20 @@ def criar_tabelas():
         ) ENGINE=InnoDB
     """)
 
-    conn.commit()
-    cur.close()
-    conn.close()
-
 
 def _criar_admin_padrao():
-    conn = conectar()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM funcionarios WHERE cargo='Admin'")
-    if cur.fetchone()[0] == 0:
-        salt = seguranca.gerar_salt()
-        h = seguranca.hash_senha('admin123', salt)
-        cur.execute("""
-            INSERT INTO funcionarios
-            (nome, cpf, cargo, telefone, email, usuario, senha_hash, senha_salt, data_admissao)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, ('Administrador', '11144477735', 'Admin', '(00) 00000-0000',
-              'admin@truckstar.com', 'admin', h, salt, date.today()))
-        conn.commit()
-        print("[seed] Admin padrão criado. TROQUE A SENHA NO PRIMEIRO LOGIN.")
-    cur.close()
-    conn.close()
+    with cursor() as (conn, cur):
+        cur.execute("SELECT COUNT(*) FROM funcionarios WHERE cargo='Admin'")
+        if cur.fetchone()[0] == 0:
+            salt = seguranca.gerar_salt()
+            h = seguranca.hash_senha('admin123', salt)
+            cur.execute("""
+                INSERT INTO funcionarios
+                (nome, cpf, cargo, telefone, email, usuario, senha_hash, senha_salt, data_admissao)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, ('Administrador', '11144477735', 'Admin', '(00) 00000-0000',
+                  'admin@truckstar.com', 'admin', h, salt, date.today()))
+            print("[seed] Admin padrão criado. TROQUE A SENHA NO PRIMEIRO LOGIN.")
 
 
 def _migrar_admin_cpf_legado():
@@ -198,15 +230,11 @@ def _migrar_admin_cpf_legado():
     antigo ('00000000000'). Idempotente. Falha silenciosa se colidir com
     outro funcionario."""
     try:
-        conn = conectar()
-        cur = conn.cursor()
-        cur.execute("""
-            UPDATE funcionarios SET cpf='11144477735'
-            WHERE usuario='admin' AND cpf='00000000000'
-        """)
-        conn.commit()
-        cur.close()
-        conn.close()
+        with cursor() as (conn, cur):
+            cur.execute("""
+                UPDATE funcionarios SET cpf='11144477735'
+                WHERE usuario='admin' AND cpf='00000000000'
+            """)
     except Exception as e:
         print("[migration] CPF do admin legado nao migrado:", e)
 

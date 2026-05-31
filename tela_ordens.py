@@ -14,7 +14,7 @@ import customtkinter as ctk
 from tkinter import messagebox, ttk, filedialog
 from datetime import datetime
 
-from db import conectar
+from db import cursor
 from pdf_os import gerar_pdf_os
 import validacoes as v
 from email_sender import enviar_email, email_os_criada, email_os_atualizada
@@ -127,12 +127,23 @@ class TelaOrdens(ctk.CTkToplevel):
         self._carregar_combos()
 
     def _carregar_combos(self):
-        conn = conectar()
-        cur = conn.cursor()
-        cur.execute("SELECT id, nome, cpf_cnpj FROM clientes WHERE ativo=1 ORDER BY nome")
+        try:
+            with cursor() as (conn, cur):
+                cur.execute("SELECT id, nome, cpf_cnpj FROM clientes WHERE ativo=1 ORDER BY nome")
+                clientes = cur.fetchall()
+                cur.execute("""
+                    SELECT id, nome, cargo FROM funcionarios
+                    WHERE cargo IN ('Mecânico','Admin') AND ativo=1
+                    ORDER BY nome
+                """)
+                mecanicos = cur.fetchall()
+        except Exception as e:
+            mostrar_erro(self, "Não foi possível carregar clientes/mecânicos.", e)
+            return
+
         self.clientes_map = {}
         lista = []
-        for r in cur.fetchall():
+        for r in clientes:
             label = "{} - {} ({})".format(r[0], r[1], v.formatar_cpf_ou_cnpj(r[2]))
             self.clientes_map[label] = r[0]
             lista.append(label)
@@ -141,14 +152,9 @@ class TelaOrdens(ctk.CTkToplevel):
             self.cb_cliente.set(lista[0])
             self._on_cliente(lista[0])
 
-        cur.execute("""
-            SELECT id, nome, cargo FROM funcionarios
-            WHERE cargo IN ('Mecânico','Admin') AND ativo=1
-            ORDER BY nome
-        """)
         self.mec_map = {}
         lista_m = []
-        for r in cur.fetchall():
+        for r in mecanicos:
             label = "{} - {} ({})".format(r[0], r[1], r[2])
             self.mec_map[label] = r[0]
             lista_m.append(label)
@@ -156,29 +162,28 @@ class TelaOrdens(ctk.CTkToplevel):
         if lista_m:
             self.cb_mecanico.set(lista_m[0])
 
-        cur.close()
-        conn.close()
-
     def _on_cliente(self, valor):
         cli_id = self.clientes_map.get(valor)
         if not cli_id:
             return
-        conn = conectar()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT id, placa, marca, modelo FROM caminhoes
-            WHERE cliente_id=%s ORDER BY placa
-        """, (cli_id,))
+        try:
+            with cursor() as (conn, cur):
+                cur.execute("""
+                    SELECT id, placa, marca, modelo FROM caminhoes
+                    WHERE cliente_id=%s ORDER BY placa
+                """, (cli_id,))
+                caminhoes = cur.fetchall()
+        except Exception as e:
+            mostrar_erro(self, "Não foi possível carregar os caminhões do cliente.", e)
+            return
         self.cam_map = {}
         lista = []
-        for r in cur.fetchall():
+        for r in caminhoes:
             label = "{} - {} ({} {})".format(
                 r[0], v.formatar_placa(r[1]), r[2] or '', r[3] or ''
             )
             self.cam_map[label] = r[0]
             lista.append(label)
-        cur.close()
-        conn.close()
         self.cb_caminhao.configure(values=lista)
         self.cb_caminhao.set(lista[0] if lista else '')
 
@@ -207,37 +212,32 @@ class TelaOrdens(ctk.CTkToplevel):
         data_fech = datetime.now() if status in ("Concluída", "Cancelada") else None
 
         try:
-            conn = conectar()
-            cur = conn.cursor()
-            cur.execute("""
-                INSERT INTO ordens_servico (caminhao_id, cliente_id, funcionario_id,
-                    data_abertura, data_fechamento, descricao_problema,
-                    servicos_realizados, pecas_utilizadas,
-                    valor_mao_obra, valor_pecas, valor_total, status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                self.cam_map[cam_label], self.clientes_map[cli_label], self.mec_map[mec_label],
-                datetime.now(), data_fech,
-                self.t_problema.get("1.0", "end").strip(),
-                self.t_servicos.get("1.0", "end").strip(),
-                self.t_pecas.get("1.0", "end").strip(),
-                v_mo, v_pc, v_total, status
-            ))
-            os_id = cur.lastrowid
-            conn.commit()
-
-            # busca dados pra email
-            cur.execute("""
-                SELECT cl.nome, cl.email, ca.placa, f.nome
-                FROM ordens_servico o
-                JOIN clientes cl ON cl.id = o.cliente_id
-                JOIN caminhoes ca ON ca.id = o.caminhao_id
-                JOIN funcionarios f ON f.id = o.funcionario_id
-                WHERE o.id=%s
-            """, (os_id,))
-            row = cur.fetchone()
-            cur.close()
-            conn.close()
+            with cursor() as (conn, cur):
+                cur.execute("""
+                    INSERT INTO ordens_servico (caminhao_id, cliente_id, funcionario_id,
+                        data_abertura, data_fechamento, descricao_problema,
+                        servicos_realizados, pecas_utilizadas,
+                        valor_mao_obra, valor_pecas, valor_total, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    self.cam_map[cam_label], self.clientes_map[cli_label], self.mec_map[mec_label],
+                    datetime.now(), data_fech,
+                    self.t_problema.get("1.0", "end").strip(),
+                    self.t_servicos.get("1.0", "end").strip(),
+                    self.t_pecas.get("1.0", "end").strip(),
+                    v_mo, v_pc, v_total, status
+                ))
+                os_id = cur.lastrowid
+                # busca dados pra email (mesma transacao — ve a linha recem inserida)
+                cur.execute("""
+                    SELECT cl.nome, cl.email, ca.placa, f.nome
+                    FROM ordens_servico o
+                    JOIN clientes cl ON cl.id = o.cliente_id
+                    JOIN caminhoes ca ON ca.id = o.caminhao_id
+                    JOIN funcionarios f ON f.id = o.funcionario_id
+                    WHERE o.id=%s
+                """, (os_id,))
+                row = cur.fetchone()
 
             if row and row[1]:  # tem email
                 assunto, corpo = email_os_criada(row[0], os_id, v.formatar_placa(row[2]),
@@ -314,37 +314,41 @@ class TelaOrdens(ctk.CTkToplevel):
         termo_norm = termo.upper().replace('-', '').replace(' ', '')
         like1 = "%" + termo + "%"
         like2 = "%" + termo_norm + "%"
-        conn = conectar()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT o.id, o.data_abertura, ca.placa, cl.nome, f.nome, o.status, o.valor_total
-            FROM ordens_servico o
-            JOIN caminhoes ca ON ca.id = o.caminhao_id
-            JOIN clientes cl ON cl.id = o.cliente_id
-            JOIN funcionarios f ON f.id = o.funcionario_id
-            WHERE ca.placa LIKE %s OR ca.placa LIKE %s OR cl.nome LIKE %s
-            ORDER BY o.data_abertura DESC LIMIT 500
-        """, (like2, like1, like1))
-        self._preencher(cur.fetchall())
-        cur.close()
-        conn.close()
+        try:
+            with cursor() as (conn, cur):
+                cur.execute("""
+                    SELECT o.id, o.data_abertura, ca.placa, cl.nome, f.nome, o.status, o.valor_total
+                    FROM ordens_servico o
+                    JOIN caminhoes ca ON ca.id = o.caminhao_id
+                    JOIN clientes cl ON cl.id = o.cliente_id
+                    JOIN funcionarios f ON f.id = o.funcionario_id
+                    WHERE ca.placa LIKE %s OR ca.placa LIKE %s OR cl.nome LIKE %s
+                    ORDER BY o.data_abertura DESC LIMIT 500
+                """, (like2, like1, like1))
+                registros = cur.fetchall()
+        except Exception as e:
+            mostrar_erro(self, "Não foi possível consultar as Ordens de Serviço.", e)
+            return
+        self._preencher(registros)
 
     def _listar_todas(self):
         if not hasattr(self, 'tree_os'):
             return
-        conn = conectar()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT o.id, o.data_abertura, ca.placa, cl.nome, f.nome, o.status, o.valor_total
-            FROM ordens_servico o
-            JOIN caminhoes ca ON ca.id = o.caminhao_id
-            JOIN clientes cl ON cl.id = o.cliente_id
-            JOIN funcionarios f ON f.id = o.funcionario_id
-            ORDER BY o.data_abertura DESC LIMIT 500
-        """)
-        self._preencher(cur.fetchall())
-        cur.close()
-        conn.close()
+        try:
+            with cursor() as (conn, cur):
+                cur.execute("""
+                    SELECT o.id, o.data_abertura, ca.placa, cl.nome, f.nome, o.status, o.valor_total
+                    FROM ordens_servico o
+                    JOIN caminhoes ca ON ca.id = o.caminhao_id
+                    JOIN clientes cl ON cl.id = o.cliente_id
+                    JOIN funcionarios f ON f.id = o.funcionario_id
+                    ORDER BY o.data_abertura DESC LIMIT 500
+                """)
+                registros = cur.fetchall()
+        except Exception as e:
+            mostrar_erro(self, "Não foi possível listar as Ordens de Serviço.", e)
+            return
+        self._preencher(registros)
 
     def _preencher(self, registros):
         for i in self.tree_os.get_children():
@@ -364,26 +368,27 @@ class TelaOrdens(ctk.CTkToplevel):
         return int(self.tree_os.item(sel[0], "values")[0])
 
     def _buscar_dados_os(self, os_id):
-        conn = conectar()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT o.id, o.data_abertura, o.data_fechamento, o.descricao_problema,
-                   o.servicos_realizados, o.pecas_utilizadas, o.valor_mao_obra,
-                   o.valor_pecas, o.valor_total, o.status,
-                   cl.nome, cl.cpf_cnpj, cl.telefone, cl.email,
-                   cl.cep, cl.logradouro, cl.numero, cl.complemento,
-                   cl.bairro, cl.cidade, cl.estado,
-                   ca.placa, ca.marca, ca.modelo, ca.ano, ca.cor, ca.chassi,
-                   f.nome, o.cliente_id, o.funcionario_id
-            FROM ordens_servico o
-            JOIN clientes cl ON cl.id = o.cliente_id
-            JOIN caminhoes ca ON ca.id = o.caminhao_id
-            JOIN funcionarios f ON f.id = o.funcionario_id
-            WHERE o.id=%s
-        """, (os_id,))
-        r = cur.fetchone()
-        cur.close()
-        conn.close()
+        try:
+            with cursor() as (conn, cur):
+                cur.execute("""
+                    SELECT o.id, o.data_abertura, o.data_fechamento, o.descricao_problema,
+                           o.servicos_realizados, o.pecas_utilizadas, o.valor_mao_obra,
+                           o.valor_pecas, o.valor_total, o.status,
+                           cl.nome, cl.cpf_cnpj, cl.telefone, cl.email,
+                           cl.cep, cl.logradouro, cl.numero, cl.complemento,
+                           cl.bairro, cl.cidade, cl.estado,
+                           ca.placa, ca.marca, ca.modelo, ca.ano, ca.cor, ca.chassi,
+                           f.nome, o.cliente_id, o.funcionario_id
+                    FROM ordens_servico o
+                    JOIN clientes cl ON cl.id = o.cliente_id
+                    JOIN caminhoes ca ON ca.id = o.caminhao_id
+                    JOIN funcionarios f ON f.id = o.funcionario_id
+                    WHERE o.id=%s
+                """, (os_id,))
+                r = cur.fetchone()
+        except Exception as e:
+            mostrar_erro(self, "Não foi possível carregar os dados da OS.", e)
+            return None
         if not r:
             return None
         return {
@@ -491,12 +496,8 @@ class TelaOrdens(ctk.CTkToplevel):
         if not messagebox.askyesno("Confirmar", "Excluir OS #{:06d}?".format(os_id), parent=self):
             return
         try:
-            conn = conectar()
-            cur = conn.cursor()
-            cur.execute("DELETE FROM ordens_servico WHERE id=%s", (os_id,))
-            conn.commit()
-            cur.close()
-            conn.close()
+            with cursor() as (conn, cur):
+                cur.execute("DELETE FROM ordens_servico WHERE id=%s", (os_id,))
             self._listar_todas()
         except Exception as e:
             mostrar_erro(self, "Não foi possível excluir a Ordem de Serviço.", e)
@@ -611,18 +612,14 @@ class TelaOrdens(ctk.CTkToplevel):
             data_fech = None
 
         try:
-            conn = conectar()
-            cur = conn.cursor()
-            cur.execute("""
-                UPDATE ordens_servico SET status=%s, data_fechamento=%s,
-                    servicos_realizados=%s, pecas_utilizadas=%s,
-                    valor_mao_obra=%s, valor_pecas=%s, valor_total=%s
-                WHERE id=%s
-            """, (novo_status, data_fech, servicos_novos, pecas_novas,
-                  v_mo, v_pc, v_total, self.os_em_edicao['id']))
-            conn.commit()
-            cur.close()
-            conn.close()
+            with cursor() as (conn, cur):
+                cur.execute("""
+                    UPDATE ordens_servico SET status=%s, data_fechamento=%s,
+                        servicos_realizados=%s, pecas_utilizadas=%s,
+                        valor_mao_obra=%s, valor_pecas=%s, valor_total=%s
+                    WHERE id=%s
+                """, (novo_status, data_fech, servicos_novos, pecas_novas,
+                      v_mo, v_pc, v_total, self.os_em_edicao['id']))
 
             # email a cada ALTERACAO real, nao so mudanca de status.
             # Sincrono: sabemos o resultado real do Resend antes de mostrar

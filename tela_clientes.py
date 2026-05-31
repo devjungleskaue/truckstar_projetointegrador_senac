@@ -7,7 +7,7 @@ import threading
 import customtkinter as ctk
 from tkinter import messagebox, ttk
 
-from db import conectar
+from db import cursor
 import validacoes as v
 from email_sender import enviar_email, email_boas_vindas
 from ui_utils import habilitar_resize_e_fullscreen, botao_tela_cheia
@@ -154,11 +154,19 @@ class TelaClientes(ctk.CTkToplevel):
 
         def tarefa():
             res = v.buscar_cep(cep)
-            self.after(0, lambda: self._aplicar_cep(res))
+            # Guard: se a janela foi fechada durante a requisição HTTP,
+            # agendar no widget morto lançaria "application destroyed".
+            try:
+                if self.winfo_exists():
+                    self.after(0, lambda: self._aplicar_cep(res))
+            except Exception:
+                pass
 
         threading.Thread(target=tarefa, daemon=True).start()
 
     def _aplicar_cep(self, res: dict):
+        if not self.winfo_exists():
+            return
         self.btn_cep.configure(state="normal", text="Buscar CEP")
         if not res['ok']:
             messagebox.showerror("CEP", res['erro'], parent=self)
@@ -205,18 +213,14 @@ class TelaClientes(ctk.CTkToplevel):
             messagebox.showwarning("Atenção", erro, parent=self)
             return
         try:
-            conn = conectar()
-            cur = conn.cursor()
-            cur.execute("""
-                INSERT INTO clientes (nome, cpf_cnpj, telefone, email, cep, logradouro,
-                    numero, complemento, bairro, cidade, estado)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (d['nome'], d['cpf'], d['tel'], d['email'], d['cep'] or None,
-                  d['log'] or None, d['num'] or None, d['comp'] or None,
-                  d['bairro'] or None, d['cidade'] or None, d['estado'] or None))
-            conn.commit()
-            cur.close()
-            conn.close()
+            with cursor() as (conn, cur):
+                cur.execute("""
+                    INSERT INTO clientes (nome, cpf_cnpj, telefone, email, cep, logradouro,
+                        numero, complemento, bairro, cidade, estado)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (d['nome'], d['cpf'], d['tel'], d['email'], d['cep'] or None,
+                      d['log'] or None, d['num'] or None, d['comp'] or None,
+                      d['bairro'] or None, d['cidade'] or None, d['estado'] or None))
             # email de boas vindas — sincrono pra mostrar resultado real
             msg_ok = "Cliente cadastrado!"
             if d['email']:
@@ -242,20 +246,16 @@ class TelaClientes(ctk.CTkToplevel):
             messagebox.showwarning("Atenção", erro, parent=self)
             return
         try:
-            conn = conectar()
-            cur = conn.cursor()
-            cur.execute("""
-                UPDATE clientes SET nome=%s, cpf_cnpj=%s, telefone=%s, email=%s,
-                    cep=%s, logradouro=%s, numero=%s, complemento=%s,
-                    bairro=%s, cidade=%s, estado=%s
-                WHERE id=%s
-            """, (d['nome'], d['cpf'], d['tel'], d['email'], d['cep'] or None,
-                  d['log'] or None, d['num'] or None, d['comp'] or None,
-                  d['bairro'] or None, d['cidade'] or None, d['estado'] or None,
-                  self.id_atual))
-            conn.commit()
-            cur.close()
-            conn.close()
+            with cursor() as (conn, cur):
+                cur.execute("""
+                    UPDATE clientes SET nome=%s, cpf_cnpj=%s, telefone=%s, email=%s,
+                        cep=%s, logradouro=%s, numero=%s, complemento=%s,
+                        bairro=%s, cidade=%s, estado=%s
+                    WHERE id=%s
+                """, (d['nome'], d['cpf'], d['tel'], d['email'], d['cep'] or None,
+                      d['log'] or None, d['num'] or None, d['comp'] or None,
+                      d['bairro'] or None, d['cidade'] or None, d['estado'] or None,
+                      self.id_atual))
             messagebox.showinfo("OK", "Cliente atualizado!", parent=self)
             self.limpar()
             self.listar()
@@ -273,12 +273,8 @@ class TelaClientes(ctk.CTkToplevel):
                                    parent=self):
             return
         try:
-            conn = conectar()
-            cur = conn.cursor()
-            cur.execute("DELETE FROM clientes WHERE id=%s", (self.id_atual,))
-            conn.commit()
-            cur.close()
-            conn.close()
+            with cursor() as (conn, cur):
+                cur.execute("DELETE FROM clientes WHERE id=%s", (self.id_atual,))
             self.limpar()
             self.listar()
         except Exception as e:
@@ -295,53 +291,56 @@ class TelaClientes(ctk.CTkToplevel):
         for i in self.tree.get_children():
             self.tree.delete(i)
         busca = self.e_busca.get().strip()
-        conn = conectar()
-        cur = conn.cursor()
-        if busca:
-            like = "%" + busca + "%"
-            busca_num = v._so_digitos(busca)
-            if busca_num:
-                like_num = "%" + busca_num + "%"
-                cur.execute("""
-                    SELECT id, nome, cpf_cnpj, telefone, email, cidade, estado
-                    FROM clientes WHERE ativo=1 AND (nome LIKE %s OR cpf_cnpj LIKE %s)
-                    ORDER BY nome LIMIT 500
-                """, (like, like_num))
-            else:
-                cur.execute("""
-                    SELECT id, nome, cpf_cnpj, telefone, email, cidade, estado
-                    FROM clientes WHERE ativo=1 AND nome LIKE %s
-                    ORDER BY nome LIMIT 500
-                """, (like,))
-        else:
-            cur.execute("""
-                SELECT id, nome, cpf_cnpj, telefone, email, cidade, estado
-                FROM clientes WHERE ativo=1 ORDER BY nome LIMIT 500
-            """)
-        for r in cur.fetchall():
+        try:
+            with cursor() as (conn, cur):
+                if busca:
+                    like = "%" + busca + "%"
+                    busca_num = v._so_digitos(busca)
+                    if busca_num:
+                        like_num = "%" + busca_num + "%"
+                        cur.execute("""
+                            SELECT id, nome, cpf_cnpj, telefone, email, cidade, estado
+                            FROM clientes WHERE ativo=1 AND (nome LIKE %s OR cpf_cnpj LIKE %s)
+                            ORDER BY nome LIMIT 500
+                        """, (like, like_num))
+                    else:
+                        cur.execute("""
+                            SELECT id, nome, cpf_cnpj, telefone, email, cidade, estado
+                            FROM clientes WHERE ativo=1 AND nome LIKE %s
+                            ORDER BY nome LIMIT 500
+                        """, (like,))
+                else:
+                    cur.execute("""
+                        SELECT id, nome, cpf_cnpj, telefone, email, cidade, estado
+                        FROM clientes WHERE ativo=1 ORDER BY nome LIMIT 500
+                    """)
+                linhas = cur.fetchall()
+        except Exception as e:
+            mostrar_erro(self, "Não foi possível carregar a lista de clientes.", e)
+            return
+        for r in linhas:
             cid_uf = "{}/{}".format(r[5] or '', r[6] or '').strip('/')
             self.tree.insert("", "end", values=(
                 r[0], r[1], v.formatar_cpf_ou_cnpj(r[2]),
                 v.formatar_telefone(r[3] or ''), r[4] or '', cid_uf
             ))
-        cur.close()
-        conn.close()
 
     def selecionar(self, event):
         sel = self.tree.selection()
         if not sel:
             return
         self.id_atual = int(self.tree.item(sel[0], "values")[0])
-        conn = conectar()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT nome, cpf_cnpj, telefone, email, cep, logradouro, numero,
-                   complemento, bairro, cidade, estado
-            FROM clientes WHERE id=%s
-        """, (self.id_atual,))
-        r = cur.fetchone()
-        cur.close()
-        conn.close()
+        try:
+            with cursor() as (conn, cur):
+                cur.execute("""
+                    SELECT nome, cpf_cnpj, telefone, email, cep, logradouro, numero,
+                           complemento, bairro, cidade, estado
+                    FROM clientes WHERE id=%s
+                """, (self.id_atual,))
+                r = cur.fetchone()
+        except Exception as e:
+            mostrar_erro(self, "Não foi possível carregar o cliente.", e)
+            return
         if not r:
             return
         id_bak = self.id_atual
@@ -436,25 +435,21 @@ class TelaCaminhoes(ctk.CTkToplevel):
                 return
             ano_int = int(ano_str)
         try:
-            conn = conectar()
-            cur = conn.cursor()
-            if self.id_atual:
-                cur.execute("""
-                    UPDATE caminhoes SET placa=%s, marca=%s, modelo=%s, ano=%s,
-                        cor=%s, chassi=%s WHERE id=%s
-                """, (placa, self.e_marca.get().strip(), self.e_modelo.get().strip(),
-                      ano_int, self.e_cor.get().strip(), self.e_chassi.get().strip(),
-                      self.id_atual))
-            else:
-                cur.execute("""
-                    INSERT INTO caminhoes (cliente_id, placa, marca, modelo, ano, cor, chassi)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, (self.cliente_id, placa, self.e_marca.get().strip(),
-                      self.e_modelo.get().strip(), ano_int, self.e_cor.get().strip(),
-                      self.e_chassi.get().strip()))
-            conn.commit()
-            cur.close()
-            conn.close()
+            with cursor() as (conn, cur):
+                if self.id_atual:
+                    cur.execute("""
+                        UPDATE caminhoes SET placa=%s, marca=%s, modelo=%s, ano=%s,
+                            cor=%s, chassi=%s WHERE id=%s
+                    """, (placa, self.e_marca.get().strip(), self.e_modelo.get().strip(),
+                          ano_int, self.e_cor.get().strip(), self.e_chassi.get().strip(),
+                          self.id_atual))
+                else:
+                    cur.execute("""
+                        INSERT INTO caminhoes (cliente_id, placa, marca, modelo, ano, cor, chassi)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """, (self.cliente_id, placa, self.e_marca.get().strip(),
+                          self.e_modelo.get().strip(), ano_int, self.e_cor.get().strip(),
+                          self.e_chassi.get().strip()))
             messagebox.showinfo("OK", "Caminhão salvo!", parent=self)
             self.limpar()
             self.listar()
@@ -467,12 +462,8 @@ class TelaCaminhoes(ctk.CTkToplevel):
         if not messagebox.askyesno("Confirmar", "Excluir este caminhão?", parent=self):
             return
         try:
-            conn = conectar()
-            cur = conn.cursor()
-            cur.execute("DELETE FROM caminhoes WHERE id=%s", (self.id_atual,))
-            conn.commit()
-            cur.close()
-            conn.close()
+            with cursor() as (conn, cur):
+                cur.execute("DELETE FROM caminhoes WHERE id=%s", (self.id_atual,))
             self.limpar()
             self.listar()
         except Exception as e:
@@ -487,32 +478,35 @@ class TelaCaminhoes(ctk.CTkToplevel):
     def listar(self):
         for i in self.tree.get_children():
             self.tree.delete(i)
-        conn = conectar()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT id, placa, marca, modelo, ano, cor FROM caminhoes
-            WHERE cliente_id=%s ORDER BY placa
-        """, (self.cliente_id,))
-        for r in cur.fetchall():
+        try:
+            with cursor() as (conn, cur):
+                cur.execute("""
+                    SELECT id, placa, marca, modelo, ano, cor FROM caminhoes
+                    WHERE cliente_id=%s ORDER BY placa
+                """, (self.cliente_id,))
+                linhas = cur.fetchall()
+        except Exception as e:
+            mostrar_erro(self, "Não foi possível carregar os caminhões.", e)
+            return
+        for r in linhas:
             self.tree.insert("", "end", values=(
                 r[0], v.formatar_placa(r[1]), r[2] or '', r[3] or '',
                 r[4] or '', r[5] or ''
             ))
-        cur.close()
-        conn.close()
 
     def selecionar(self, event):
         sel = self.tree.selection()
         if not sel:
             return
         self.id_atual = int(self.tree.item(sel[0], "values")[0])
-        conn = conectar()
-        cur = conn.cursor()
-        cur.execute("SELECT placa, marca, modelo, ano, cor, chassi FROM caminhoes WHERE id=%s",
-                    (self.id_atual,))
-        r = cur.fetchone()
-        cur.close()
-        conn.close()
+        try:
+            with cursor() as (conn, cur):
+                cur.execute("SELECT placa, marca, modelo, ano, cor, chassi FROM caminhoes WHERE id=%s",
+                            (self.id_atual,))
+                r = cur.fetchone()
+        except Exception as e:
+            mostrar_erro(self, "Não foi possível carregar o caminhão.", e)
+            return
         if not r:
             return
         id_bak = self.id_atual

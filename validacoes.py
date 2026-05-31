@@ -4,10 +4,15 @@ Tudo stdlib (urllib, re, json).
 """
 import re
 import json
+import math
 import urllib.request
 import urllib.error
 import socket
 from datetime import datetime
+
+
+# Teto compatível com a coluna DECIMAL(10,2) do schema (valores monetários)
+VALOR_MAX = 99_999_999.99
 
 
 def _so_digitos(s: str) -> str:
@@ -198,10 +203,21 @@ def formatar_cep(cep: str) -> str:
 
 
 # ---------- VALOR MONETARIO ----------
+def _validar_faixa(v: float) -> float:
+    """Rejeita inf/nan e valores acima do teto do DECIMAL(10,2)."""
+    if not math.isfinite(v):
+        raise ValueError("Valor inválido (infinito ou NaN)")
+    v = max(0.0, v)
+    if v > VALOR_MAX:
+        raise ValueError("Valor acima do máximo permitido (R$ 99.999.999,99)")
+    return v
+
+
 def parse_valor(s) -> float:
-    """Aceita '1.234,56' ou '1234.56' ou número. Retorna float >= 0."""
+    """Aceita '1.234,56' ou '1234.56' ou número. Retorna float em [0, VALOR_MAX].
+    Levanta ValueError se inválido, infinito, NaN ou acima do teto."""
     if isinstance(s, (int, float)):
-        return max(0.0, float(s))
+        return _validar_faixa(float(s))
     if not s:
         return 0.0
     s = str(s).strip().replace('R$', '').replace(' ', '')
@@ -210,6 +226,6 @@ def parse_valor(s) -> float:
         s = s.replace('.', '').replace(',', '.')
     try:
         v = float(s)
-        return max(0.0, v)
     except ValueError:
         raise ValueError("Valor inválido: " + str(s))
+    return _validar_faixa(v)
