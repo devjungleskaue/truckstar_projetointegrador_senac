@@ -10,7 +10,7 @@ import customtkinter as ctk
 from tkinter import messagebox
 
 import config
-from db import conectar, inicializar
+from db import cursor, inicializar
 import seguranca
 from ui_utils import habilitar_resize_e_fullscreen, botao_tela_cheia
 from ui_helpers import mostrar_erro
@@ -22,6 +22,19 @@ ctk.set_default_color_theme("blue")
 
 # ---- rate limit em memória ----
 _tentativas = {}  # chave -> [(timestamp), ...]
+_GC_LIMIAR_CHAVES = 1000  # acima disso, faz limpeza global de chaves expiradas
+
+
+def _gc_tentativas():
+    """Remove chaves cujas tentativas já expiraram. Evita crescimento
+    indefinido de _tentativas quando há muitos usuários distintos."""
+    if len(_tentativas) < _GC_LIMIAR_CHAVES:
+        return
+    agora = time.time()
+    mortas = [k for k, lst in _tentativas.items()
+              if not any(agora - t < config.LOGIN_BLOQUEIO_SEGUNDOS for t in lst)]
+    for k in mortas:
+        _tentativas.pop(k, None)
 
 
 def _registrar_tentativa(chave: str):
@@ -31,6 +44,7 @@ def _registrar_tentativa(chave: str):
     lista = [t for t in lista if agora - t < config.LOGIN_BLOQUEIO_SEGUNDOS]
     lista.append(agora)
     _tentativas[chave] = lista
+    _gc_tentativas()
 
 
 def _bloqueado(chave: str) -> int:
@@ -97,15 +111,12 @@ class TelaLogin(ctk.CTk):
             return
 
         try:
-            conn = conectar()
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT id, nome, cargo, senha_hash, senha_salt, ativo
-                FROM funcionarios WHERE usuario=%s
-            """, (usuario,))
-            r = cur.fetchone()
-            cur.close()
-            conn.close()
+            with cursor() as (conn, cur):
+                cur.execute("""
+                    SELECT id, nome, cargo, senha_hash, senha_salt, ativo
+                    FROM funcionarios WHERE usuario=%s
+                """, (usuario,))
+                r = cur.fetchone()
         except Exception as e:
             mostrar_erro(self, "Não foi possível verificar credenciais. Tente novamente.", e)
             return
