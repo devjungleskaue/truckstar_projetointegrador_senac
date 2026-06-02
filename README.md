@@ -37,6 +37,15 @@ emails sobre suas Ordens de Serviço.
 > ⚠️ **Troque a senha do admin imediatamente após o primeiro login** via tela
 > de Funcionários. A senha padrão `admin123` é apenas para bootstrap.
 
+## Testes
+
+A suíte de testes automatizados fica em [`tests/`](tests/) (ver
+[tests/README.md](tests/README.md)). Para validar todo o sistema:
+
+```bash
+py tests/testar_sistema.py
+```
+
 ## Permissões por cargo
 
 | Cargo      | Clientes | Funcionários | Criar OS | Editar OS | Excluir OS |
