@@ -13,6 +13,19 @@ import resend
 
 import config
 
+# Timeout do request HTTP ao Resend (s) e teto de espera da UI no envio sincrono.
+# Configuraveis via config.py; usam padrao se ausentes (nao quebra config antigo).
+_TIMEOUT_REQUEST = getattr(config, 'EMAIL_TIMEOUT_REQUEST', 15)
+_TIMEOUT_UI = getattr(config, 'EMAIL_TIMEOUT_UI', 20)
+
+# Aplica timeout no cliente HTTP do Resend (default do SDK e' 30s, sem teto util
+# para a UI). Se a versao do SDK nao tiver RequestsClient, segue com o default.
+try:
+    from resend.http_client_requests import RequestsClient as _ResendRequestsClient
+    resend.default_http_client = _ResendRequestsClient(timeout=_TIMEOUT_REQUEST)
+except Exception:
+    pass
+
 
 def _esc(s) -> str:
     """Escapa string para inserção segura em corpo HTML de email."""
@@ -92,9 +105,13 @@ def enviar_email(destinatario: str, assunto: str, corpo_html: str, em_thread: bo
     Quando em_thread=True (default): dispara em background e retorna None
       imediatamente. A UI nao sabe o resultado.
 
-    Quando em_thread=False: roda sincrono e retorna (sucesso: bool, erro: str).
-      Use isso na UI para mostrar mensagens corretas ao usuario (evita o
-      problema de mostrar "email enviado" antes do Resend retornar erro).
+    Quando em_thread=False: roda sincrono e retorna (sucesso: bool, erro: str),
+      MAS com teto de tempo (_TIMEOUT_UI): roda numa worker thread e espera no
+      maximo esse tempo, para a interface nunca congelar se a rede travar. Se
+      estourar, o envio segue em segundo plano (daemon) e o resultado e'
+      registrado no log quando terminar; a UI recebe um aviso de timeout.
+      Use isso na UI para mostrar mensagens corretas (evita "email enviado"
+      antes do Resend retornar erro).
     """
     def tarefa():
         sucesso, erro = _enviar_sincrono(destinatario, assunto, corpo_html)
@@ -108,7 +125,18 @@ def enviar_email(destinatario: str, assunto: str, corpo_html: str, em_thread: bo
     if em_thread:
         threading.Thread(target=tarefa, daemon=True).start()
         return None
-    return tarefa()
+
+    # Sincrono com teto de tempo: a UI nunca espera mais que _TIMEOUT_UI.
+    resultado = {}
+    def worker():
+        resultado['valor'] = tarefa()
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    t.join(_TIMEOUT_UI)
+    if t.is_alive():
+        return False, ("Tempo de envio esgotado ({}s). A conexao pode estar lenta; "
+                       "o email ainda pode ser enviado em segundo plano.").format(_TIMEOUT_UI)
+    return resultado.get('valor', (False, "Falha desconhecida no envio de email."))
 
 
 # ---------- TEMPLATES PRONTOS ----------
