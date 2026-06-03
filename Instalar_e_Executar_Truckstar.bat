@@ -1,5 +1,7 @@
 @echo off
-setlocal enabledelayedexpansion
+REM Sem 'enabledelayedexpansion' de proposito: com ela, um '!' no caminho da
+REM pasta (ex: C:\pasta!\) seria removido de %~dp0. Nao usamos !var! aqui.
+setlocal
 chcp 65001 >nul
 title Truckstar - Instalador e Executor
 
@@ -15,7 +17,12 @@ if not exist "%PS1%" (
     powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -UseBasicParsing -Uri '%RAW%' -OutFile '%TEMP%\truckstar_setup.ps1'; exit 0 } catch { Write-Host ('Falha ao baixar: ' + $_.Exception.Message) -ForegroundColor Red; exit 1 }"
     if errorlevel 1 (
         echo.
-        echo Nao foi possivel baixar o instalador. Verifique sua conexao com a internet.
+        echo Nao foi possivel baixar o setup.ps1 do GitHub.
+        echo Causas possiveis:
+        echo   - sem conexao com a internet;
+        echo   - o arquivo ainda nao foi publicado no repositorio ^(push pendente^);
+        echo   - URL do repositorio incorreta.
+        echo Alternativa: copie o setup.ps1 para a MESMA pasta deste .bat.
         echo.
         pause
         exit /b 1
