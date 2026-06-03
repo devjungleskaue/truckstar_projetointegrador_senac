@@ -162,34 +162,52 @@ if ((Test-Path (Join-Path $PSScriptRoot 'main.py')) -and (Test-Path (Join-Path $
     $projeto = (Get-Location).Path
     Ok "Projeto encontrado na pasta atual."
 } else {
-    if (-not $temGit) {
-        Erro "Git e necessario para clonar o projeto. Instale em https://git-scm.com/download/win"
-        exit 1
+    # Procura uma instalacao existente nas subpastas do diretorio atual ANTES de
+    # clonar. Cobre o caso de rodar o .bat do Desktop com o projeto numa subpasta
+    # de nome diferente do repo (ex: Truckstar_PI_Final). Prioriza a que ja tem
+    # config.py (instalacao configurada).
+    $achados = @()
+    foreach ($d in (Get-ChildItem -Directory -Path . -ErrorAction SilentlyContinue)) {
+        if ((Test-Path (Join-Path $d.FullName 'main.py')) -and (Test-Path (Join-Path $d.FullName 'db.py'))) {
+            $achados += $d.FullName
+        }
     }
-    $nome = [System.IO.Path]::GetFileNameWithoutExtension(($RepoUrl -replace '\.git$',''))
-    $alvo = Join-Path (Get-Location).Path $nome
-    $temConteudo = (Test-Path $alvo) -and ([bool](Get-ChildItem -Force -LiteralPath $alvo -ErrorAction SilentlyContinue | Select-Object -First 1))
-    if ((Test-Path (Join-Path $alvo 'main.py'))) {
-        # Repo ja clonado -> atualiza.
-        Ok "Repositorio ja clonado em '$nome'. Atualizando..."
-        Push-Location $alvo
-        Nativo git pull --ff-only | Out-Null
-        Pop-Location
-    } elseif ($temConteudo) {
-        # Pasta existe, NAO-vazia e sem main.py: clone anterior interrompido ou
-        # conflito de nome. git clone falharia ("not an empty directory").
-        Erro "Ja existe uma pasta chamada '$nome' (incompleta) em:"
-        Write-Host "      $alvo" -ForegroundColor Yellow
-        Write-Host "    Remova/renomeie essa pasta e rode novamente, ou execute" -ForegroundColor Yellow
-        Write-Host "    o instalador a partir de outra pasta." -ForegroundColor Yellow
-        exit 1
+    $comCfg = @($achados | Where-Object { Test-Path (Join-Path $_ 'config.py') })
+    if ($comCfg.Count -gt 0) {
+        $projeto = $comCfg[0]
+        Ok "Instalacao existente encontrada em subpasta: $projeto"
+    } elseif ($achados.Count -gt 0) {
+        $projeto = $achados[0]
+        Ok "Projeto encontrado em subpasta: $projeto"
     } else {
-        # Pasta nao existe ou esta vazia: git clone funciona normalmente.
-        Write-Host "  Clonando $RepoUrl ..." -ForegroundColor DarkGray
-        $rc = Nativo git clone $RepoUrl $alvo
-        if ($rc -ne 0) { Erro "Falha ao clonar o repositorio."; exit 1 }
+        if (-not $temGit) {
+            Erro "Git e necessario para clonar o projeto. Instale em https://git-scm.com/download/win"
+            exit 1
+        }
+        $nome = [System.IO.Path]::GetFileNameWithoutExtension(($RepoUrl -replace '\.git$',''))
+        $alvo = Join-Path (Get-Location).Path $nome
+        $temConteudo = (Test-Path $alvo) -and ([bool](Get-ChildItem -Force -LiteralPath $alvo -ErrorAction SilentlyContinue | Select-Object -First 1))
+        if ((Test-Path (Join-Path $alvo 'main.py'))) {
+            # Repo ja clonado -> atualiza.
+            Ok "Repositorio ja clonado em '$nome'. Atualizando..."
+            Push-Location $alvo
+            Nativo git pull --ff-only | Out-Null
+            Pop-Location
+        } elseif ($temConteudo) {
+            # Pasta existe, NAO-vazia e sem main.py: clone interrompido/conflito.
+            Erro "Ja existe uma pasta chamada '$nome' (incompleta) em:"
+            Write-Host "      $alvo" -ForegroundColor Yellow
+            Write-Host "    Remova/renomeie essa pasta e rode novamente, ou execute" -ForegroundColor Yellow
+            Write-Host "    o instalador a partir de outra pasta." -ForegroundColor Yellow
+            exit 1
+        } else {
+            # Pasta nao existe ou esta vazia: git clone funciona normalmente.
+            Write-Host "  Clonando $RepoUrl ..." -ForegroundColor DarkGray
+            $rc = Nativo git clone $RepoUrl $alvo
+            if ($rc -ne 0) { Erro "Falha ao clonar o repositorio."; exit 1 }
+        }
+        $projeto = $alvo
     }
-    $projeto = $alvo
 }
 
 Set-Location $projeto -ErrorAction Stop
