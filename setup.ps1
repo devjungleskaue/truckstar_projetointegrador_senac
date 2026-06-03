@@ -42,8 +42,12 @@ function Erro($t)    { Write-Host "  [X] $t" -ForegroundColor Red }
 
 # Executa comando nativo mostrando a saida como texto comum (sem virar erro
 # vermelho) e devolve o exit code real.
+# Obs: evitamos $args[1..($args.Count-1)] porque, quando ha so 1 argumento,
+# o range vira 1..0 e o PowerShell o inverte (pega indices errados).
 function Nativo {
-    & $args[0] @($args[1..($args.Count-1)]) 2>&1 | ForEach-Object { Write-Host $_ }
+    $exe = $args[0]
+    if ($args.Count -gt 1) { $rest = @($args[1..($args.Count - 1)]) } else { $rest = @() }
+    & $exe @rest 2>&1 | ForEach-Object { Write-Host $_ }
     return $LASTEXITCODE
 }
 
@@ -120,12 +124,23 @@ if ((Test-Path (Join-Path $PSScriptRoot 'main.py')) -and (Test-Path (Join-Path $
     }
     $nome = [System.IO.Path]::GetFileNameWithoutExtension(($RepoUrl -replace '\.git$',''))
     $alvo = Join-Path (Get-Location).Path $nome
+    $temConteudo = (Test-Path $alvo) -and ([bool](Get-ChildItem -Force -LiteralPath $alvo -ErrorAction SilentlyContinue | Select-Object -First 1))
     if ((Test-Path (Join-Path $alvo 'main.py'))) {
+        # Repo ja clonado -> atualiza.
         Ok "Repositorio ja clonado em '$nome'. Atualizando..."
         Push-Location $alvo
         Nativo git pull --ff-only | Out-Null
         Pop-Location
+    } elseif ($temConteudo) {
+        # Pasta existe, NAO-vazia e sem main.py: clone anterior interrompido ou
+        # conflito de nome. git clone falharia ("not an empty directory").
+        Erro "Ja existe uma pasta chamada '$nome' (incompleta) em:"
+        Write-Host "      $alvo" -ForegroundColor Yellow
+        Write-Host "    Remova/renomeie essa pasta e rode novamente, ou execute" -ForegroundColor Yellow
+        Write-Host "    o instalador a partir de outra pasta." -ForegroundColor Yellow
+        exit 1
     } else {
+        # Pasta nao existe ou esta vazia: git clone funciona normalmente.
         Write-Host "  Clonando $RepoUrl ..." -ForegroundColor DarkGray
         $rc = Nativo git clone $RepoUrl $alvo
         if ($rc -ne 0) { Erro "Falha ao clonar o repositorio."; exit 1 }
@@ -216,7 +231,7 @@ EMPRESA_DESC = 'Mecânica de Caminhões'
 
     # Testa conexao usando o proprio config.py (sem precisar reescapar nada).
     Write-Host "  Testando conexao com o MySQL..." -ForegroundColor DarkGray
-    $rc = Nativo $PY -c "import config, pymysql; pymysql.connect(host=config.DB_HOST, user=config.DB_USER, password=config.DB_PASSWORD, charset='utf8mb4').close(); print('CONEXAO_OK')"
+    $rc = Nativo $PY -c "import config, pymysql; pymysql.connect(host=config.DB_HOST, user=config.DB_USER, password=config.DB_PASSWORD, charset='utf8mb4', connect_timeout=5).close(); print('CONEXAO_OK')"
     if ($rc -eq 0) {
         Ok "Conexao com o MySQL bem-sucedida."
         break
