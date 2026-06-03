@@ -75,6 +75,50 @@ function Pergunta($rotulo, $valorParam, $padrao, [switch]$Senha) {
     return $r
 }
 
+# Verifica se o sistema JA esta instalado e operante: dependencias importam,
+# config.py existe, conecta no MySQL e as 5 tabelas existem. Retorna $true
+# somente quando tudo esta pronto (permite pular a configuracao).
+function Sistema-Ja-Funciona {
+    if (-not (Test-Path '.\config.py')) { return $false }
+    $verif = @'
+import os, sys
+sys.path.insert(0, os.getcwd())
+try:
+    import config, pymysql, customtkinter, reportlab, resend
+except Exception as e:
+    print("[check] dependencia/config ausente:", e); sys.exit(2)
+try:
+    conexao = pymysql.connect(host=config.DB_HOST, user=config.DB_USER,
+                              password=config.DB_PASSWORD, database=config.DB_NAME,
+                              charset="utf8mb4", connect_timeout=5)
+except Exception as e:
+    print("[check] banco inacessivel:", e); sys.exit(3)
+try:
+    cur = conexao.cursor()
+    cur.execute("SHOW TABLES")
+    tabelas = set(r[0] for r in cur.fetchall())
+    necessarias = {"funcionarios", "clientes", "caminhoes", "ordens_servico", "email_logs"}
+    faltam = necessarias - tabelas
+    if faltam:
+        print("[check] faltam tabelas:", faltam); sys.exit(4)
+    print("[check] sistema OK")
+    sys.exit(0)
+finally:
+    conexao.close()
+'@
+    $enc = New-Object System.Text.UTF8Encoding($false)
+    $tmp = Join-Path $env:TEMP ("ts_health_" + [System.Guid]::NewGuid().ToString('N') + ".py")
+    $rc = 1
+    try {
+        [System.IO.File]::WriteAllText($tmp, $verif, $enc)
+        & $PY $tmp 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+        $rc = $LASTEXITCODE
+    } finally {
+        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+    }
+    return ($rc -eq 0)
+}
+
 Write-Host ""
 Write-Host "  TRUCKSTAR - Instalador" -ForegroundColor Blue
 Write-Host "  Mecanica de Caminhoes" -ForegroundColor DarkGray
@@ -150,6 +194,23 @@ if ((Test-Path (Join-Path $PSScriptRoot 'main.py')) -and (Test-Path (Join-Path $
 
 Set-Location $projeto -ErrorAction Stop
 Ok "Pasta de trabalho: $projeto"
+
+# ----------------------------------------------------------------------
+# Fast-path: se o sistema JA existe e funciona, pula direto para a execucao.
+# So entra em instalacao/configuracao se algo faltar (ou com -Reconfigure/-Reset).
+# ----------------------------------------------------------------------
+$jaFunciona = $false
+if (-not $Reconfigure -and -not $Reset) {
+    Titulo "Verificando instalacao existente"
+    if (Sistema-Ja-Funciona) {
+        Ok "Sistema ja instalado e operante. Pulando para a execucao."
+        $jaFunciona = $true
+    } else {
+        Write-Host "  Ainda nao esta pronto; seguindo para instalacao/configuracao." -ForegroundColor DarkGray
+    }
+}
+
+if (-not $jaFunciona) {
 
 # ----------------------------------------------------------------------
 # 3. Dependencias
@@ -259,6 +320,8 @@ if ($Reset) {
 }
 if ($rc -ne 0) { Erro "Falha ao inicializar o banco."; exit 1 }
 Ok "Banco e tabelas prontos."
+
+}  # fim do if (-not $jaFunciona) -- bloco de instalacao/configuracao
 
 # ----------------------------------------------------------------------
 # 7. Executar
