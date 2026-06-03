@@ -14,6 +14,16 @@ ao cliente, geração de PDF profissional da OS e validação oficial de CPF/CNP
 
 ## Setup
 
+### Opção A — Instalador automático (Windows)
+
+Dê duplo clique em **`Instalar_e_Executar_Truckstar.bat`**. Ele localiza a
+instalação existente no PC (ou clona o repo), instala as dependências,
+pergunta as credenciais (MySQL + Resend), cria o banco e abre o sistema.
+Nas execuções seguintes, se o sistema já estiver pronto, abre direto sem
+reconfigurar (use `-Reconfigure` ou `-Reset` para forçar).
+
+### Opção B — Manual
+
 ```bash
 pip install -r requirements.txt
 cp config.example.py config.py     # preencha as credenciais
@@ -72,6 +82,8 @@ py tests/testar_sistema.py
 ## Estrutura
 
 ```
+├── Instalar_e_Executar_Truckstar.bat  # instalador 1-clique (Windows)
+├── setup.ps1            # lógica do instalador (localiza/clona, deps, config, run)
 ├── config.example.py    # template (copie para config.py)
 ├── .env.example         # alternativa via variáveis de ambiente
 ├── db.py                # schema e conexão pymysql
@@ -80,10 +92,12 @@ py tests/testar_sistema.py
 ├── email_sender.py      # envio Resend API + templates HTML
 ├── pdf_os.py            # gerador de PDF da OS
 ├── ui_utils.py          # helpers de resize/fullscreen
+├── ui_helpers.py        # helper de exibição de erros na UI
 ├── main.py              # entry point + login + roteamento
 ├── tela_clientes.py     # CRUD clientes + caminhões
 ├── tela_funcionarios.py # CRUD funcionários
-└── tela_ordens.py       # CRUD OS + consulta + PDF + email
+├── tela_ordens.py       # CRUD OS + consulta + PDF + email
+└── tests/               # suíte de testes automatizados
 ```
 
 ## Configuração de email (Resend)
