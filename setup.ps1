@@ -119,6 +119,84 @@ finally:
     return ($rc -eq 0)
 }
 
+# ----------------------------------------------------------------------
+# Localizacao do projeto no PC (busca em camadas).
+# Uma pasta e' considerada o projeto Truckstar quando contem a assinatura
+# de 4 arquivos abaixo (evita falso-positivo com outros projetos Python).
+# ----------------------------------------------------------------------
+$ASSINATURA = @('main.py', 'db.py', 'tela_ordens.py', 'pdf_os.py')
+
+function Test-EhTruckstar([string]$dir) {
+    if (-not $dir) { return $false }
+    foreach ($f in $ASSINATURA) {
+        if (-not (Test-Path -LiteralPath (Join-Path $dir $f))) { return $false }
+    }
+    return $true
+}
+
+# BFS com poda: varre as raizes procurando pastas-projeto. Nao desce dentro de
+# uma pasta ja identificada como projeto, ignora pastas de sistema/lixo e
+# reparse points (symlinks/junctions) para nao entrar em loop.
+function Find-TruckstarDirs {
+    param([string[]]$Roots, [int]$MaxDepth = 6)
+
+    $proibidas = @(
+        '$Recycle.Bin', 'Windows', 'Program Files', 'Program Files (x86)',
+        'ProgramData', 'AppData', 'node_modules', '.git', 'venv', '.venv',
+        'env', '__pycache__', 'System Volume Information', '.vs', '.idea',
+        'Microsoft', 'Packages', 'WindowsApps'
+    )
+    $resultados = New-Object System.Collections.Generic.List[string]
+    $vistos = @{}
+    $fila = New-Object System.Collections.Generic.Queue[object]
+    foreach ($r in $Roots) {
+        if ($r -and (Test-Path -LiteralPath $r)) {
+            $fila.Enqueue([pscustomobject]@{ Path = $r; Depth = 0 })
+        }
+    }
+    while ($fila.Count -gt 0) {
+        $item = $fila.Dequeue()
+        $dir = $item.Path
+        $chave = $dir.ToLower()
+        if ($vistos.ContainsKey($chave)) { continue }
+        $vistos[$chave] = $true
+
+        if (Test-EhTruckstar $dir) { $resultados.Add($dir); continue }
+        if ($item.Depth -ge $MaxDepth) { continue }
+
+        try {
+            $subs = Get-ChildItem -LiteralPath $dir -Directory -Force -ErrorAction SilentlyContinue
+        } catch { $subs = @() }
+        foreach ($s in $subs) {
+            if ($proibidas -contains $s.Name) { continue }
+            if ($s.Name.StartsWith('.')) { continue }
+            # Pula APENAS reparse points de sistema (junctions/mount points como
+            # 'Documents and Settings', 'Application Data' legados) que causam
+            # loops. NAO pula pastas do OneDrive (Files On-Demand), que sao
+            # reparse points SEM o atributo System e contem dados reais.
+            $attr = $s.Attributes
+            if (($attr -band [IO.FileAttributes]::ReparsePoint) -and ($attr -band [IO.FileAttributes]::System)) { continue }
+            $fila.Enqueue([pscustomobject]@{ Path = $s.FullName; Depth = $item.Depth + 1 })
+        }
+    }
+    return $resultados
+}
+
+# Entre varios candidatos, escolhe o melhor: instalacao COM config.py vem
+# primeiro; em empate, a modificada mais recentemente.
+function Select-MelhorProjeto([string[]]$dirs) {
+    if (-not $dirs -or $dirs.Count -eq 0) { return $null }
+    $info = foreach ($d in $dirs) {
+        $temCfg = Test-Path -LiteralPath (Join-Path $d 'config.py')
+        try { $mod = (Get-Item -LiteralPath $d -Force).LastWriteTime } catch { $mod = [datetime]::MinValue }
+        [pscustomobject]@{ Path = $d; TemCfg = [bool]$temCfg; Mod = $mod }
+    }
+    $best = $info |
+        Sort-Object @{ Expression = 'TemCfg'; Descending = $true }, @{ Expression = 'Mod'; Descending = $true } |
+        Select-Object -First 1
+    return $best.Path
+}
+
 Write-Host ""
 Write-Host "  TRUCKSTAR - Instalador" -ForegroundColor Blue
 Write-Host "  Mecanica de Caminhoes" -ForegroundColor DarkGray
@@ -154,63 +232,83 @@ if ($temGit) { Ok "Git: $(git --version)" } else { Aviso "Git nao encontrado (so
 Titulo "Localizando o projeto"
 
 $projeto = $null
-# Ja estamos dentro do repo?
-if ((Test-Path (Join-Path $PSScriptRoot 'main.py')) -and (Test-Path (Join-Path $PSScriptRoot 'db.py'))) {
+
+# --- Camada 0: a propria pasta do script ou a pasta atual ja sao o projeto? ---
+if (Test-EhTruckstar $PSScriptRoot) {
     $projeto = $PSScriptRoot
     Ok "Projeto encontrado na pasta do script."
-} elseif ((Test-Path '.\main.py') -and (Test-Path '.\db.py')) {
+} elseif (Test-EhTruckstar (Get-Location).Path) {
     $projeto = (Get-Location).Path
     Ok "Projeto encontrado na pasta atual."
-} else {
-    # Procura uma instalacao existente nas subpastas do diretorio atual ANTES de
-    # clonar. Cobre o caso de rodar o .bat do Desktop com o projeto numa subpasta
-    # de nome diferente do repo (ex: Truckstar_PI_Final). Prioriza a que ja tem
-    # config.py (instalacao configurada).
-    $achados = @()
-    foreach ($d in (Get-ChildItem -Directory -Path . -ErrorAction SilentlyContinue)) {
-        if ((Test-Path (Join-Path $d.FullName 'main.py')) -and (Test-Path (Join-Path $d.FullName 'db.py'))) {
-            $achados += $d.FullName
+}
+
+# --- Camada 1: locais provaveis (perfil do usuario + onde o .bat esta) ---
+# Cobre Desktop, Documentos, Downloads, OneDrive (qualquer idioma), etc.,
+# independentemente de onde o .bat foi executado.
+if (-not $projeto) {
+    Write-Host "  Procurando instalacao existente nos locais comuns..." -ForegroundColor DarkGray
+    $raizes = @($PSScriptRoot, (Get-Location).Path, $env:USERPROFILE) |
+        Where-Object { $_ } | Select-Object -Unique
+    $achados = Find-TruckstarDirs -Roots $raizes -MaxDepth 6
+    if ($achados.Count -gt 0) {
+        $projeto = Select-MelhorProjeto $achados
+        Ok "Instalacao encontrada: $projeto"
+        if ($achados.Count -gt 1) {
+            Write-Host "    ($($achados.Count) copias encontradas; usando a configurada/mais recente)" -ForegroundColor DarkGray
         }
-    }
-    $comCfg = @($achados | Where-Object { Test-Path (Join-Path $_ 'config.py') })
-    if ($comCfg.Count -gt 0) {
-        $projeto = $comCfg[0]
-        Ok "Instalacao existente encontrada em subpasta: $projeto"
-    } elseif ($achados.Count -gt 0) {
-        $projeto = $achados[0]
-        Ok "Projeto encontrado em subpasta: $projeto"
-    } else {
-        if (-not $temGit) {
-            Erro "Git e necessario para clonar o projeto. Instale em https://git-scm.com/download/win"
-            exit 1
-        }
-        $nome = [System.IO.Path]::GetFileNameWithoutExtension(($RepoUrl -replace '\.git$',''))
-        $alvo = Join-Path (Get-Location).Path $nome
-        $temConteudo = (Test-Path $alvo) -and ([bool](Get-ChildItem -Force -LiteralPath $alvo -ErrorAction SilentlyContinue | Select-Object -First 1))
-        if ((Test-Path (Join-Path $alvo 'main.py'))) {
-            # Repo ja clonado -> atualiza.
-            Ok "Repositorio ja clonado em '$nome'. Atualizando..."
-            Push-Location $alvo
-            Nativo git pull --ff-only | Out-Null
-            Pop-Location
-        } elseif ($temConteudo) {
-            # Pasta existe, NAO-vazia e sem main.py: clone interrompido/conflito.
-            Erro "Ja existe uma pasta chamada '$nome' (incompleta) em:"
-            Write-Host "      $alvo" -ForegroundColor Yellow
-            Write-Host "    Remova/renomeie essa pasta e rode novamente, ou execute" -ForegroundColor Yellow
-            Write-Host "    o instalador a partir de outra pasta." -ForegroundColor Yellow
-            exit 1
-        } else {
-            # Pasta nao existe ou esta vazia: git clone funciona normalmente.
-            Write-Host "  Clonando $RepoUrl ..." -ForegroundColor DarkGray
-            $rc = Nativo git clone $RepoUrl $alvo
-            if ($rc -ne 0) { Erro "Falha ao clonar o repositorio."; exit 1 }
-        }
-        $projeto = $alvo
     }
 }
 
-Set-Location $projeto -ErrorAction Stop
+# --- Camada 2 (fallback): varredura dos drives fixos inteiros ---
+# So roda se nada foi achado nos locais comuns. Pode demorar.
+if (-not $projeto) {
+    Aviso "Nao achei nos locais comuns. Varrendo os drives fixos (pode demorar)..."
+    $fixos = @()
+    foreach ($drv in [System.IO.DriveInfo]::GetDrives()) {
+        if ($drv.DriveType -eq [System.IO.DriveType]::Fixed -and $drv.IsReady) {
+            $fixos += $drv.RootDirectory.FullName
+        }
+    }
+    $achados = Find-TruckstarDirs -Roots $fixos -MaxDepth 12
+    if ($achados.Count -gt 0) {
+        $projeto = Select-MelhorProjeto $achados
+        Ok "Instalacao encontrada: $projeto"
+        if ($achados.Count -gt 1) {
+            Write-Host "    ($($achados.Count) copias encontradas; usando a configurada/mais recente)" -ForegroundColor DarkGray
+        }
+    }
+}
+
+# --- Nada no PC inteiro: clonar do GitHub ---
+if (-not $projeto) {
+    Write-Host "  Nenhuma instalacao encontrada no PC. Sera baixada uma nova." -ForegroundColor DarkGray
+    if (-not $temGit) {
+        Erro "Git e necessario para clonar o projeto. Instale em https://git-scm.com/download/win"
+        exit 1
+    }
+    $nome = [System.IO.Path]::GetFileNameWithoutExtension(($RepoUrl -replace '\.git$', ''))
+    $alvo = Join-Path (Get-Location).Path $nome
+    $temConteudo = (Test-Path -LiteralPath $alvo) -and ([bool](Get-ChildItem -Force -LiteralPath $alvo -ErrorAction SilentlyContinue | Select-Object -First 1))
+    if (Test-EhTruckstar $alvo) {
+        Ok "Repositorio ja clonado em '$nome'. Atualizando..."
+        Push-Location $alvo
+        Nativo git pull --ff-only | Out-Null
+        Pop-Location
+    } elseif ($temConteudo) {
+        Erro "Ja existe uma pasta chamada '$nome' (incompleta) em:"
+        Write-Host "      $alvo" -ForegroundColor Yellow
+        Write-Host "    Remova/renomeie essa pasta e rode novamente, ou execute" -ForegroundColor Yellow
+        Write-Host "    o instalador a partir de outra pasta." -ForegroundColor Yellow
+        exit 1
+    } else {
+        Write-Host "  Clonando $RepoUrl ..." -ForegroundColor DarkGray
+        $rc = Nativo git clone $RepoUrl $alvo
+        if ($rc -ne 0) { Erro "Falha ao clonar o repositorio."; exit 1 }
+    }
+    $projeto = $alvo
+}
+
+Set-Location -LiteralPath $projeto -ErrorAction Stop
 Ok "Pasta de trabalho: $projeto"
 
 # ----------------------------------------------------------------------
