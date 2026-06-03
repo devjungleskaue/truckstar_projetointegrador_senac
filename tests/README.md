@@ -20,13 +20,20 @@ ou falha, sem depender de clicar na interface.
 A partir da **raiz do projeto** (a pasta que contém `main.py` e `config.py`):
 
 ```bash
-py tests/testar_sistema.py            # 63 testes (validações, segurança, banco, CRUD, email, PDF)
+py tests/testar_sistema.py            # 62 testes (validações, segurança, banco, CRUD, email, PDF)
 py tests/testar_sistema.py --rede     # inclui consulta real ao ViaCEP (precisa de internet)
 py tests/testar_sistema.py --email    # inclui envio real via Resend (consome cota gratuita)
 ```
 
 > O script lê o `config.py` da raiz para conectar ao MySQL. Garanta que o
 > banco está acessível antes de rodar.
+
+> **Sobre os 2 testes opcionais (`--rede`/`--email`):** eles acessam a internet
+> (ViaCEP e Resend). Em redes com firewall restritivo (ex: Wi-Fi institucional)
+> ficam bloqueados; numa rede sem restrição passam normalmente. Por isso ficam
+> **fora** da execução padrão — os 62 testes core não dependem de internet, e a
+> **taxa de 100%** se refere a eles. Com a rede liberada e as flags, o total
+> também fecha em 100%.
 
 ### O que é testado
 
@@ -58,7 +65,7 @@ conexão ficou aberta (verificação de *connection leak*).
 
 ================================================================
  RESUMO
-  Passaram: 63   Falharam: 0   Pulados: 1   (de 63 testes executados)
+  Passaram: 62   Falharam: 0   Pulados: 2   (de 62 testes executados)
 
   Taxa de sucesso: 100%
 
