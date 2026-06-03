@@ -490,6 +490,11 @@ class TelaOrdens(ctk.CTkToplevel):
         txt.configure(state="disabled")
 
     def _excluir_os(self):
+        # Defesa em profundidade: alem de esconder o botao, revalida o cargo.
+        if self.usuario['cargo'] != 'Admin':
+            messagebox.showwarning("Permissão",
+                "Apenas o Admin pode excluir Ordens de Serviço.", parent=self)
+            return
         os_id = self._os_id_selecionada()
         if not os_id:
             return
