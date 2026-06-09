@@ -382,7 +382,7 @@ DB_NAME = '$(Esc-Py $n)'
 # ===== EMAIL (RESEND) =====
 RESEND_API_KEY = '$(Esc-Py $k)'
 EMAIL_FROM = '$(Esc-Py $ef)'
-EMAIL_REMETENTE_NOME = 'Truckstar Mecânica'
+EMAIL_REMETENTE_NOME = 'Truckstar Mec$([char]0xE2)nica'
 EMAIL_REPLY_TO = '$(Esc-Py $er)'
 
 # ===== SEGURANCA =====
@@ -393,7 +393,7 @@ LOGIN_BLOQUEIO_SEGUNDOS = 60
 
 # ===== APLICACAO =====
 EMPRESA_NOME = 'Truckstar'
-EMPRESA_DESC = 'Mecânica de Caminhões'
+EMPRESA_DESC = 'Mec$([char]0xE2)nica de Caminh$([char]0xF5)es'
 "@
         $enc = New-Object System.Text.UTF8Encoding($false)  # UTF-8 sem BOM
         try {
