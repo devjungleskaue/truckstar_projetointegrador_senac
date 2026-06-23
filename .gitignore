@@ -45,7 +45,7 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# ===== CLAUDE =====
+# ===== FERRAMENTAS LOCAIS =====
 .claude/
 
 # ===== ARQUIVOS GERADOS =====
