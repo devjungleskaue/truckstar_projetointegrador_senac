@@ -219,7 +219,7 @@ remetente e qualquer resposta cai na sua caixa real.
 
 ## Autor e licença
 
-Desenvolvido por [@devjungleskaue](https://github.com/devjungleskaue) como
-Projeto Integrador do curso Jovem Programador (SENAC/SC).
+Desenvolvido por **Kaue Natan Jungles** ([@devjungleskaue](https://github.com/devjungleskaue))
+como Projeto Integrador do curso Jovem Programador (SENAC/SC).
 
 Distribuído sob a licença **MIT** — veja [LICENSE](LICENSE).
