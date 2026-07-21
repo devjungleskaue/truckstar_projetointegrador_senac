@@ -1,3 +1,30 @@
+# Truckstar — Truck Workshop Management System
+
+A Python desktop application for managing the daily operation of a truck repair shop: customers, employees, vehicles and service orders.
+
+## English overview
+
+Truckstar was built as the first-module Integrative Project of the SENAC/SC Jovem Programador program. It combines a CustomTkinter desktop interface with MySQL persistence and practical business workflows.
+
+### Highlights
+
+- Employee authentication with PBKDF2-SHA256 password hashing and login rate limiting
+- Role-based access for administrators, attendants and mechanics
+- Customer, employee, truck and service-order management
+- Official CPF/CNPJ validation and address lookup through ViaCEP
+- Professional service-order PDFs generated with ReportLab
+- Transactional customer emails through the Resend API
+- Parameterized SQL and local secret/configuration handling
+- Automated system tests and a one-click Windows setup flow
+
+### Tech stack
+
+**Python · MySQL · CustomTkinter · PyMySQL · ReportLab · Resend**
+
+The complete Portuguese documentation follows below.
+
+---
+
 # 🚛 Truckstar — Sistema de Gestão para Mecânica de Caminhões
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
