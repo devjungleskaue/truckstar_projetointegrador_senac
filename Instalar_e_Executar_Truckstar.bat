@@ -7,7 +7,7 @@ title Truckstar - Instalador e Executor
 
 set "HERE=%~dp0"
 set "PS1=%HERE%setup.ps1"
-set "RAW=https://raw.githubusercontent.com/cocteaugaze/truckstar_projetointegrador_senac/main/setup.ps1"
+set "RAW=https://raw.githubusercontent.com/devjungleskaue/truckstar_projetointegrador_senac/main/setup.ps1"
 
 REM Se o setup.ps1 nao estiver ao lado do .bat (ex: usuario baixou so o .bat),
 REM baixa o instalador do GitHub para a pasta temporaria.

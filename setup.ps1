@@ -16,7 +16,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$RepoUrl      = 'https://github.com/cocteaugaze/truckstar_projetointegrador_senac.git',
+    [string]$RepoUrl      = 'https://github.com/devjungleskaue/truckstar_projetointegrador_senac.git',
     [string]$DbHost       = '',
     [string]$DbUser       = '',
     [string]$DbPassword   = '',
